@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Pill } from '@/components/ui/Chips';
 import { fechaCorta, nf } from '@/lib/domain/helpers';
+import { buildSnapshot } from '@/lib/parser';
 import type { ComisionConfig, SnapshotMeta } from '@/lib/domain/types';
 
 interface UserPub { username: 'admin' | 'jefa' | 'fernanda' | 'stefania' | 'julio' | 'luz'; rol: string; display: string }
@@ -45,20 +46,43 @@ function UploadCard({ meta }: { meta: SnapshotMeta | null }) {
   async function submit() {
     if (!csv || !xlsx) return;
     setLoading(true); setError(null); setResult(null);
+    const t0 = performance.now();
     try {
-      const fd = new FormData();
-      fd.append('blip', csv);
-      fd.append('admin', xlsx);
-      const r = await fetch('/api/upload', { method: 'POST', body: fd });
+      // 1. Procesar archivos en el browser (evita el límite de 4.5 MB de Vercel)
+      const [csvText, xlsxBuffer] = await Promise.all([
+        csv.text(),
+        xlsx.arrayBuffer(),
+      ]);
+      const report = await buildSnapshot({
+        csvBuffer: csvText,
+        xlsxBuffer,
+        archivoBlip: csv.name,
+        archivoAdmin: xlsx.name,
+      });
+      const procMs = Math.round(performance.now() - t0);
+
+      // 2. Enviar el snapshot procesado (≈13 KB) al server para persistirlo
+      const r = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snapshot: report.snapshot }),
+      });
       const data = await r.json();
       if (!r.ok) {
-        setError(data.error ?? 'Error al procesar los archivos.');
+        setError(data.error ?? 'Error al guardar el snapshot.');
       } else {
-        setResult(data);
+        setResult({
+          ok: true,
+          tomaMs: procMs,
+          meta: data.meta,
+          blip: report.blip,
+          admin: report.admin,
+          warnings: report.warnings,
+        });
         router.refresh();
       }
     } catch (e: any) {
-      setError(e?.message ?? 'No se pudo contactar al servidor.');
+      setError(e?.message ?? 'No se pudo procesar los archivos.');
     } finally {
       setLoading(false);
     }

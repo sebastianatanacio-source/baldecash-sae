@@ -16,8 +16,8 @@ import type {
 } from '@/lib/domain/types';
 
 export interface BuildSnapshotInput {
-  csvBuffer: Buffer | ArrayBuffer | string;
-  xlsxBuffer: Buffer | ArrayBuffer;
+  csvBuffer: ArrayBuffer | Uint8Array | string;
+  xlsxBuffer: ArrayBuffer | Uint8Array;
   archivoBlip?: string;
   archivoAdmin?: string;
   generadoPor?: string;
@@ -34,7 +34,11 @@ export async function buildSnapshot(input: BuildSnapshotInput): Promise<BuildSna
   const csvText =
     typeof input.csvBuffer === 'string'
       ? input.csvBuffer
-      : new TextDecoder('utf-8').decode(input.csvBuffer instanceof Buffer ? input.csvBuffer : new Uint8Array(input.csvBuffer));
+      : new TextDecoder('utf-8').decode(
+          input.csvBuffer instanceof Uint8Array
+            ? input.csvBuffer
+            : new Uint8Array(input.csvBuffer as ArrayBuffer),
+        );
 
   const blip  = parseBlipCsv(stripBom(csvText));
   const admin = parseAdminXlsx(input.xlsxBuffer);

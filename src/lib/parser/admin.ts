@@ -25,9 +25,10 @@ export interface AdminResultado {
   rangoMeses: Set<MesKey>;
 }
 
-export function parseAdminXlsx(buffer: ArrayBuffer | Buffer): AdminResultado {
-  // raw=true → mantiene los Date como objetos JS
-  const wb = XLSX.read(buffer, { type: buffer instanceof Buffer ? 'buffer' : 'array', cellDates: true });
+export function parseAdminXlsx(buffer: ArrayBuffer | Uint8Array): AdminResultado {
+  // SheetJS detecta el tipo automáticamente con type: 'array' para ArrayBuffer/Uint8Array.
+  // Funciona idéntico en server y browser.
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
   if (!ws) throw new Error('XLSX vacío: no se encontró ninguna hoja.');
 
