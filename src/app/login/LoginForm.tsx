@@ -27,7 +27,7 @@ export default function LoginForm({ next }: { next?: string }) {
         return;
       }
       // Redirección según rol
-      if (data.rol === 'fernanda' || data.rol === 'stefania' || data.rol === 'julio') {
+      if (data.rol === 'fernanda' || data.rol === 'stefania' || data.rol === 'julio' || data.rol === 'luz') {
         router.push(`/agente/${data.rol}`);
       } else {
         router.push(next ?? '/resumen');

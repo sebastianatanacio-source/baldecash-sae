@@ -39,7 +39,7 @@ export async function proxy(req: NextRequest) {
   }
 
   // Restricción por rol — asesoras solo ven su propio dashboard
-  if (session.rol === 'fernanda' || session.rol === 'stefania' || session.rol === 'julio') {
+  if (session.rol === 'fernanda' || session.rol === 'stefania' || session.rol === 'julio' || session.rol === 'luz') {
     const allowedPrefix = `/agente/${session.rol}`;
     const allowed =
       pathname === allowedPrefix ||

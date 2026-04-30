@@ -3,7 +3,7 @@
 // ============================================================
 // Estructuras compartidas entre parser, API, persistencia y UI.
 
-export type AgenteSlug = 'fernanda' | 'stefania' | 'julio';
+export type AgenteSlug = 'fernanda' | 'stefania' | 'julio' | 'luz';
 export type MesKey = 'feb' | 'mar' | 'abr' | 'may' | 'jun' | 'jul' | 'ago' | 'sep' | 'oct' | 'nov' | 'dic' | 'ene';
 
 export interface MetricasMes {
@@ -115,6 +115,18 @@ export interface ComisionConfig {
   viejaCupon: number;
   /** Comisión antigua: S/ por AE con preowner */
   viejaPreowner: number;
+
+  /**
+   * Esquema específico para Luz (que no tiene atribución por cupón).
+   * Sus métricas son Blip-only:
+   *   Pilar 1 = cantidad de "Deja solicitud" del mes
+   *   Pilar 2 = % Deja solicitud / Atenciones
+   * Si están omitidos, se usa el esquema general (pilar1/pilar2).
+   */
+  pilarLuz1?: TramoP1[];
+  pilarLuz2?: TramoP2[];
+  /** Base mensual para Luz (si difiere). Por defecto usa baseSol. */
+  baseLuzSol?: number;
 }
 
 export const DEFAULT_CONFIG: ComisionConfig = {
@@ -130,6 +142,18 @@ export const DEFAULT_CONFIG: ComisionConfig = {
     { min: 5,  bono: 100, label: '5% – 7.9%' },
     { min: 8,  bono: 300, label: '8% – 10.9%' },
     { min: 11, bono: 500, label: '11% o más' },
+  ],
+  pilarLuz1: [
+    { min: 0,   mul: 1.0,  label: 'Menos de 100 Deja-sol.' },
+    { min: 100, mul: 1.25, label: '100 – 149 Deja-sol.' },
+    { min: 150, mul: 1.5,  label: '150 – 199 Deja-sol.' },
+    { min: 200, mul: 2.0,  label: '200+ Deja-sol.' },
+  ],
+  pilarLuz2: [
+    { min: 0,  bono: 0,   label: 'Menos de 8%' },
+    { min: 8,  bono: 100, label: '8% – 9.9%' },
+    { min: 10, bono: 300, label: '10% – 11.9%' },
+    { min: 12, bono: 500, label: '12% o más' },
   ],
   viejaCupon: 20,
   viejaPreowner: 12,

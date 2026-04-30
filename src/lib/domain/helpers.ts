@@ -1,6 +1,7 @@
 // Utilidades comunes para combinar métricas y formatear
 
-import type { DataSnapshot, MesKey, MetricasMes } from './types';
+import { esBlipOnly } from './agentes';
+import type { AgenteSlug, ComisionConfig, DataSnapshot, MesKey, MetricasMes, TramoP1, TramoP2 } from './types';
 
 export function nf(n: number, decimals = 0): string {
   return new Intl.NumberFormat('es-PE', {
@@ -128,14 +129,70 @@ export function proyectarFinDeMes(
 /**
  * Solicitudes adicionales que se necesitan para alcanzar un porcentaje
  * objetivo de Sol/Aten, manteniendo las atenciones constantes.
- *
- *   pctObjetivo = (sol + N) / aten · 100
- *   N = ceil(pctObjetivo · aten / 100) - sol
  */
 export function solicitudesParaPct(solActual: number, atenActual: number, pctObjetivo: number): number {
   if (atenActual <= 0) return 0;
   const necesarias = Math.ceil((pctObjetivo / 100) * atenActual);
   return Math.max(0, necesarias - solActual);
+}
+
+/**
+ * Devuelve los tramos correctos del Pilar 1 según el agente:
+ * - Blip-only (Luz): tramos basados en "Deja solicitud"
+ * - Resto: tramos generales basados en AE
+ */
+export function tramosP1Para(slug: AgenteSlug, cfg: ComisionConfig): TramoP1[] {
+  if (esBlipOnly(slug) && cfg.pilarLuz1) return cfg.pilarLuz1;
+  return cfg.pilar1;
+}
+
+export function tramosP2Para(slug: AgenteSlug, cfg: ComisionConfig): TramoP2[] {
+  if (esBlipOnly(slug) && cfg.pilarLuz2) return cfg.pilarLuz2;
+  return cfg.pilar2;
+}
+
+export function basePara(slug: AgenteSlug, cfg: ComisionConfig): number {
+  if (esBlipOnly(slug) && cfg.baseLuzSol != null) return cfg.baseLuzSol;
+  return cfg.baseSol;
+}
+
+/**
+ * Métricas equivalentes al "AE total" y "% Sol/Aten" según el agente.
+ * Para Luz: usa "Deja solicitud" y "% Deja/Aten".
+ * Para resto: AE total y % Sol/Aten.
+ */
+export function metricasMeta(slug: AgenteSlug, m: MetricasMes): {
+  pilar1Valor: number;
+  pilar1Label: string;
+  pilar1Plural: string;
+  pilar2Valor: number;
+  pilar2Label: string;
+  pilar2Numerador: number;
+  pilar2Denominador: number;
+  pilar2NumeradorLabel: string;
+} {
+  if (esBlipOnly(slug)) {
+    return {
+      pilar1Valor: m.deja,
+      pilar1Label: 'deja-solicitud del mes',
+      pilar1Plural: 'deja-solicitud',
+      pilar2Valor: m.pctDeja,
+      pilar2Label: '% Deja-sol / Atenciones',
+      pilar2Numerador: m.deja,
+      pilar2Denominador: m.aten,
+      pilar2NumeradorLabel: 'deja-solicitud',
+    };
+  }
+  return {
+    pilar1Valor: m.aeTot,
+    pilar1Label: 'aprobadas-entregadas del mes',
+    pilar1Plural: 'aprobadas-entregadas',
+    pilar2Valor: m.pctSol,
+    pilar2Label: '% Solicitudes / Atenciones',
+    pilar2Numerador: m.sol,
+    pilar2Denominador: m.aten,
+    pilar2NumeradorLabel: 'solicitudes',
+  };
 }
 
 /** Etiqueta corta de fecha de actualización */

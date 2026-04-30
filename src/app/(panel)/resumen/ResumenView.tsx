@@ -10,12 +10,15 @@ import DonutChart from '@/components/charts/DonutChart';
 import { AGENTES, AGENTES_LIST } from '@/lib/domain/agentes';
 import { MES_LABEL_CORTO, MES_LABEL } from '@/lib/domain/meses';
 import {
-  calcularComision, formatSol, proximoTramoP1, proximoTramoP2,
-  progresoTramo, tramoP1, tramoP2,
+  calcularComision, calcularComisionPorAgente, formatSol,
+  proximoTramoP1, proximoTramoP2, progresoTramo, tramoP1, tramoP2,
 } from '@/lib/domain/comisiones';
+import { esBlipOnly } from '@/lib/domain/agentes';
 import {
   combinarMetricas, fechaCorta, mesActual, metricasAgente, metricasEquipo,
-  nf, pct, solicitudesParaPct, diasTrabajados, diasTotalesDelMes, proyectarFinDeMes,
+  metricasMeta, nf, pct, solicitudesParaPct,
+  diasTrabajados, diasTotalesDelMes, proyectarFinDeMes,
+  tramosP1Para, tramosP2Para,
 } from '@/lib/domain/helpers';
 import type { ComisionConfig, DataSnapshot, MesKey } from '@/lib/domain/types';
 import type { Rol } from '@/lib/auth/users';
@@ -357,27 +360,32 @@ function TarjetaAsesora({
   spec: typeof AGENTES.fernanda; snapshot: DataSnapshot; mes: MesKey; config: ComisionConfig;
 }) {
   const m = metricasAgente(snapshot, spec.slug, mes);
-  const t1Actual = tramoP1(m.aeTot, config.pilar1);
-  const t1Sig = proximoTramoP1(m.aeTot, config.pilar1);
-  const t2Actual = tramoP2(m.pctSol, config.pilar2);
-  const t2Sig = proximoTramoP2(m.pctSol, config.pilar2);
+  const meta = metricasMeta(spec.slug, m);
+  const tramos1 = tramosP1Para(spec.slug, config);
+  const tramos2 = tramosP2Para(spec.slug, config);
+  const blipOnly = esBlipOnly(spec.slug);
 
-  const progP1 = progresoTramo(m.aeTot, t1Actual, t1Sig);
-  const progP2 = progresoTramo(m.pctSol, t2Actual, t2Sig);
+  const t1Actual = tramoP1(meta.pilar1Valor, tramos1);
+  const t1Sig = proximoTramoP1(meta.pilar1Valor, tramos1);
+  const t2Actual = tramoP2(meta.pilar2Valor, tramos2);
+  const t2Sig = proximoTramoP2(meta.pilar2Valor, tramos2);
 
-  const com = calcularComision(m.aeTot, m.pctSol, config);
+  const progP1 = progresoTramo(meta.pilar1Valor, t1Actual, t1Sig);
+  const progP2 = progresoTramo(meta.pilar2Valor, t2Actual, t2Sig);
+
+  const com = calcularComisionPorAgente(spec.slug, meta.pilar1Valor, meta.pilar2Valor, config);
 
   // Proyección a cierre
   const dias = diasTrabajados(snapshot, spec.slug, mes);
   const total = diasTotalesDelMes(mes);
-  const aeProy = dias > 0 ? proyectarFinDeMes(m.aeTot, dias, total) : m.aeTot;
+  const v1Proy = dias > 0 ? proyectarFinDeMes(meta.pilar1Valor, dias, total) : meta.pilar1Valor;
   const atenProy = dias > 0 ? proyectarFinDeMes(m.aten, dias, total) : m.aten;
-  const solProy = dias > 0 ? proyectarFinDeMes(m.sol, dias, total) : m.sol;
-  const pctSolProy = atenProy > 0 ? +(solProy / atenProy * 100).toFixed(1) : 0;
-  const comProy = calcularComision(aeProy, pctSolProy, config).total;
+  const numProy = dias > 0 ? proyectarFinDeMes(meta.pilar2Numerador, dias, total) : meta.pilar2Numerador;
+  const v2Proy = atenProy > 0 ? +(numProy / atenProy * 100).toFixed(1) : 0;
+  const comProy = calcularComisionPorAgente(spec.slug, v1Proy, v2Proy, config).total;
 
-  const faltanAE = t1Sig ? Math.max(0, t1Sig.min - m.aeTot) : 0;
-  const faltanSol = t2Sig ? solicitudesParaPct(m.sol, m.aten, t2Sig.min) : 0;
+  const faltanP1 = t1Sig ? Math.max(0, t1Sig.min - meta.pilar1Valor) : 0;
+  const faltanNum = t2Sig ? solicitudesParaPct(meta.pilar2Numerador, meta.pilar2Denominador, t2Sig.min) : 0;
 
   return (
     <div className="card-surface p-6">
@@ -408,10 +416,10 @@ function TarjetaAsesora({
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <span className="text-[10.5px] uppercase tracking-[0.12em] font-bold" style={{ color: spec.color }}>P1</span>
-            <span className="text-[12px] font-semibold text-ink">Aprobadas-entregadas</span>
+            <span className="text-[12px] font-semibold text-ink capitalize">{meta.pilar1Plural}</span>
           </div>
           <div className="flex items-center gap-2 text-[12px]">
-            <span className="font-display font-semibold tabular text-ink">{m.aeTot}</span>
+            <span className="font-display font-semibold tabular text-ink">{meta.pilar1Valor}</span>
             {t1Sig && <span className="text-muted2 tabular">/ {t1Sig.min}</span>}
             <span
               className="px-2 py-0.5 rounded-md text-[10px] font-bold"
@@ -428,10 +436,10 @@ function TarjetaAsesora({
           />
         </div>
         <div className="flex items-center justify-between mt-1.5 text-[10.5px]">
-          <span className="text-muted2">Cierre proyectado: <strong className="text-ink2 tabular">{aeProy} A-E</strong></span>
+          <span className="text-muted2">Cierre proyectado: <strong className="text-ink2 tabular">{v1Proy} {blipOnly ? 'deja-sol' : 'A-E'}</strong></span>
           {t1Sig ? (
             <span className="font-semibold" style={{ color: spec.color }}>
-              Faltan {faltanAE} para {t1Sig.mul}×
+              Faltan {faltanP1} para {t1Sig.mul}×
             </span>
           ) : (
             <span className="font-semibold text-aqua-700">Tramo máximo</span>
@@ -444,10 +452,10 @@ function TarjetaAsesora({
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <span className="text-[10.5px] uppercase tracking-[0.12em] font-bold text-gold-600">P2</span>
-            <span className="text-[12px] font-semibold text-ink">% Sol / Atenciones</span>
+            <span className="text-[12px] font-semibold text-ink">{blipOnly ? '% Deja / Aten' : '% Sol / Aten'}</span>
           </div>
           <div className="flex items-center gap-2 text-[12px]">
-            <span className="font-display font-semibold tabular text-ink">{m.pctSol.toFixed(1)}%</span>
+            <span className="font-display font-semibold tabular text-ink">{meta.pilar2Valor.toFixed(1)}%</span>
             {t2Sig && <span className="text-muted2 tabular">/ {t2Sig.min}%</span>}
             <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-gold-100 text-gold-700">
               {com.pilar2.aplicado === 0 ? 'sin bono' : `+${formatSol(com.pilar2.aplicado)}`}
@@ -461,10 +469,10 @@ function TarjetaAsesora({
           />
         </div>
         <div className="flex items-center justify-between mt-1.5 text-[10.5px]">
-          <span className="text-muted2">Cierre proyectado: <strong className="text-ink2 tabular">{pctSolProy.toFixed(1)}%</strong></span>
+          <span className="text-muted2">Cierre proyectado: <strong className="text-ink2 tabular">{v2Proy.toFixed(1)}%</strong></span>
           {t2Sig ? (
             <span className="font-semibold text-gold-700">
-              {faltanSol > 0 ? `${faltanSol} solicitud${faltanSol === 1 ? '' : 'es'} más para ${t2Sig.min}%` : `${(t2Sig.min - m.pctSol).toFixed(1)} pp para subir`}
+              {faltanNum > 0 ? `${faltanNum} ${meta.pilar2NumeradorLabel} más para ${t2Sig.min}%` : `${(t2Sig.min - meta.pilar2Valor).toFixed(1)} pp para subir`}
             </span>
           ) : (
             <span className="font-semibold text-aqua-700">Tramo máximo</span>
@@ -478,8 +486,8 @@ function TarjetaAsesora({
           <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{nf(m.aten)}</div>
         </div>
         <div>
-          <div className="text-muted2 uppercase tracking-wider text-[9.5px]">Solicitudes</div>
-          <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{nf(m.sol)}</div>
+          <div className="text-muted2 uppercase tracking-wider text-[9.5px]">{blipOnly ? 'Deja sol.' : 'Solicitudes'}</div>
+          <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{nf(blipOnly ? m.deja : m.sol)}</div>
         </div>
         <div>
           <div className="text-muted2 uppercase tracking-wider text-[9.5px]">Días trabajados</div>

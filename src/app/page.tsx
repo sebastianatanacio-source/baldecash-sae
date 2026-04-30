@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export default async function HomePage() {
   const session = await getSession();
   if (!session.rol) redirect('/login');
-  if (session.rol === 'fernanda' || session.rol === 'stefania' || session.rol === 'julio') {
+  if (session.rol === 'fernanda' || session.rol === 'stefania' || session.rol === 'julio' || session.rol === 'luz') {
     redirect(`/agente/${session.rol}`);
   }
   redirect('/resumen');

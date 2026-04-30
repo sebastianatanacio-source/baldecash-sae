@@ -10,7 +10,7 @@ export default async function LoginPage({
   const session = await getSession();
   const params = await searchParams;
   if (session.rol) {
-    if (session.rol === 'fernanda' || session.rol === 'stefania' || session.rol === 'julio') {
+    if (session.rol === 'fernanda' || session.rol === 'stefania' || session.rol === 'julio' || session.rol === 'luz') {
       redirect(`/agente/${session.rol}`);
     }
     redirect(params.next ?? '/resumen');
@@ -28,18 +28,18 @@ export default async function LoginPage({
             </div>
             <div>
               <div className="font-display font-semibold text-lg text-ink leading-none">BaldeCash</div>
-              <div className="text-xs text-muted mt-1 tracking-wide">Servicio de Atención Estudiantil</div>
+              <div className="text-xs text-muted mt-1 tracking-wide">Equipo SAE — Atención al Estudiante</div>
             </div>
           </div>
 
           {/* Card */}
           <div className="card-surface p-8">
             <p className="eyebrow mb-3">Acceso restringido</p>
-            <h1 className="font-display text-[28px] font-semibold leading-tight text-ink mb-2">
-              Plataforma SAE
+            <h1 className="font-display text-[34px] font-semibold leading-tight text-ink mb-2">
+              Rumbo
             </h1>
             <p className="text-sm text-muted mb-7">
-              Reporte ejecutivo, indicadores operativos y gestión de comisiones del equipo de atención.
+              Tu equipo, sus metas. Reporte ejecutivo, indicadores operativos y comisiones del equipo SAE.
             </p>
             <LoginForm next={params.next} />
           </div>

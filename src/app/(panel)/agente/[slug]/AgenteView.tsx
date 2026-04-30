@@ -10,15 +10,16 @@ import { useCountUp } from '@/components/ui/useCountUp';
 import BarChart from '@/components/charts/BarChart';
 import LineChart from '@/components/charts/LineChart';
 import DonutChart from '@/components/charts/DonutChart';
-import { AGENTES } from '@/lib/domain/agentes';
+import { AGENTES, esBlipOnly } from '@/lib/domain/agentes';
 import { MES_LABEL_CORTO, MES_LABEL } from '@/lib/domain/meses';
 import {
-  calcularComision, calcularVieja, formatSol,
+  calcularComision, calcularComisionPorAgente, calcularVieja, formatSol,
   proximoTramoP1, proximoTramoP2, progresoTramo, tramoP1, tramoP2,
 } from '@/lib/domain/comisiones';
 import {
-  diasTotalesDelMes, diasTrabajados, fechaCorta, mesActual,
-  metricasAgente, nf, pct, proyectarFinDeMes, solicitudesParaPct, ultimoDiaConDatos,
+  basePara, diasTotalesDelMes, diasTrabajados, fechaCorta, mesActual,
+  metricasAgente, metricasMeta, nf, pct, proyectarFinDeMes,
+  solicitudesParaPct, tramosP1Para, tramosP2Para, ultimoDiaConDatos,
 } from '@/lib/domain/helpers';
 import type { AgenteSlug, ComisionConfig, DataSnapshot, MesKey } from '@/lib/domain/types';
 
@@ -57,15 +58,16 @@ export default function AgenteView({
 
       {mesSel === mesPorDefecto && (
         <div className="anim-fade-in-up anim-stagger-2">
-          <SeccionHoy snapshot={snapshot} agenteSlug={agenteSlug} mes={mesSel} color={spec.color} />
+          <SeccionHoy snapshot={snapshot} agenteSlug={agenteSlug} mes={mesSel} color={spec.color} blipOnly={esBlipOnly(agenteSlug)} />
         </div>
       )}
 
       <div className="anim-fade-in-up anim-stagger-3">
         <SeccionEsquema
           config={config}
-          aeTot={metricasAgente(snapshot, agenteSlug, mesSel).aeTot}
-          pctSol={metricasAgente(snapshot, agenteSlug, mesSel).pctSol}
+          agenteSlug={agenteSlug}
+          mes={mesSel}
+          snapshot={snapshot}
           color={spec.color}
         />
       </div>
@@ -158,22 +160,26 @@ function SeccionMetas({
 }) {
   const spec = AGENTES[agenteSlug];
   const m = metricasAgente(snapshot, agenteSlug, mes);
+  const meta = metricasMeta(agenteSlug, m);
+  const baseSol = basePara(agenteSlug, config);
+  const tramos1 = tramosP1Para(agenteSlug, config);
+  const tramos2 = tramosP2Para(agenteSlug, config);
 
-  // Tramos actuales y siguientes
-  const t1Actual = tramoP1(m.aeTot, config.pilar1);
-  const t1Siguiente = proximoTramoP1(m.aeTot, config.pilar1);
-  const t2Actual = tramoP2(m.pctSol, config.pilar2);
-  const t2Siguiente = proximoTramoP2(m.pctSol, config.pilar2);
+  // Tramos actuales y siguientes (usando los esquemas correctos para el agente)
+  const t1Actual = tramoP1(meta.pilar1Valor, tramos1);
+  const t1Siguiente = proximoTramoP1(meta.pilar1Valor, tramos1);
+  const t2Actual = tramoP2(meta.pilar2Valor, tramos2);
+  const t2Siguiente = proximoTramoP2(meta.pilar2Valor, tramos2);
 
-  const progresoP1 = progresoTramo(m.aeTot, t1Actual, t1Siguiente);
-  const progresoP2 = progresoTramo(m.pctSol, t2Actual, t2Siguiente);
+  const progresoP1 = progresoTramo(meta.pilar1Valor, t1Actual, t1Siguiente);
+  const progresoP2 = progresoTramo(meta.pilar2Valor, t2Actual, t2Siguiente);
 
-  const comActual = calcularComision(m.aeTot, m.pctSol, config);
+  const comActual = calcularComisionPorAgente(agenteSlug, meta.pilar1Valor, meta.pilar2Valor, config);
   const comProx1 = t1Siguiente
-    ? calcularComision(t1Siguiente.min, m.pctSol, config)
+    ? calcularComisionPorAgente(agenteSlug, t1Siguiente.min, meta.pilar2Valor, config)
     : null;
   const comProx2 = t2Siguiente
-    ? calcularComision(m.aeTot, t2Siguiente.min, config)
+    ? calcularComisionPorAgente(agenteSlug, meta.pilar1Valor, t2Siguiente.min, config)
     : null;
 
   // Proyección a fin de mes (solo si es el mes actual)
@@ -182,21 +188,25 @@ function SeccionMetas({
     const dias = diasTrabajados(snapshot, agenteSlug, mes);
     const total = diasTotalesDelMes(mes);
     if (dias <= 0) return null;
-    const aeProy = proyectarFinDeMes(m.aeTot, dias, total);
+    // Para Luz: el "valor" del Pilar 1 es deja-sol; para resto, AE.
+    const v1Actual = meta.pilar1Valor;
+    const v1Proy = proyectarFinDeMes(v1Actual, dias, total);
     const atenProy = proyectarFinDeMes(m.aten, dias, total);
-    const solProy  = proyectarFinDeMes(m.sol, dias, total);
-    const pctSolProy = atenProy > 0 ? +(solProy / atenProy * 100).toFixed(1) : 0;
-    const comProy = calcularComision(aeProy, pctSolProy, config).total;
-    return { dias, total, aeProy, atenProy, solProy, pctSolProy, comProy };
-  }, [esMesActual, snapshot, agenteSlug, mes, m, config]);
+    const numProy = proyectarFinDeMes(meta.pilar2Numerador, dias, total);
+    const v2Proy = atenProy > 0 ? +(numProy / atenProy * 100).toFixed(1) : 0;
+    const comProy = calcularComisionPorAgente(agenteSlug, v1Proy, v2Proy, config).total;
+    return { dias, total, v1Proy, atenProy, numProy, v2Proy, comProy };
+  }, [esMesActual, snapshot, agenteSlug, mes, m, meta, config]);
 
   // Faltantes
-  const faltanAE = t1Siguiente ? t1Siguiente.min - m.aeTot : 0;
+  const faltanP1 = t1Siguiente ? t1Siguiente.min - meta.pilar1Valor : 0;
   const incrementoP1 = comProx1 ? comProx1.pilar1.aplicado - comActual.pilar1.aplicado : 0;
 
-  // Solicitudes que faltan para llegar al siguiente tramo del Pilar 2
-  // (manteniendo las atenciones constantes)
-  const solFaltantesP2 = t2Siguiente ? solicitudesParaPct(m.sol, m.aten, t2Siguiente.min) : 0;
+  // Numerador adicional necesario para subir al siguiente tramo del Pilar 2
+  // (manteniendo el denominador = atenciones constantes)
+  const numFaltantesP2 = t2Siguiente
+    ? solicitudesParaPct(meta.pilar2Numerador, meta.pilar2Denominador, t2Siguiente.min)
+    : 0;
   const incrementoP2 = comProx2 ? comProx2.pilar2.aplicado - comActual.pilar2.aplicado : 0;
 
   return (
@@ -210,30 +220,29 @@ function SeccionMetas({
         {/* CARD 1: COMISIÓN PROYECTADA / ACUMULADA */}
         <CardComisionHero
           comActual={comActual}
-          proyec={proyec}
+          proyec={proyec ? { comProy: proyec.comProy } : null}
           esMesActual={esMesActual}
-          configBase={config.baseSol}
+          configBase={baseSol}
           comVieja={calcularVieja(m, config)}
+          mostrarVieja={!esBlipOnly(agenteSlug)}
         />
 
-        {/* CARD 2: PILAR 1 — APROBADAS-ENTREGADAS */}
+        {/* CARD 2: PILAR 1 */}
         <MetaProgress
-          eyebrow="Pilar 1 · Aprobadas-entregadas del mes"
-          valorActual={m.aeTot}
+          eyebrow={`Pilar 1 · ${meta.pilar1Label.charAt(0).toUpperCase() + meta.pilar1Label.slice(1)}`}
+          valorActual={meta.pilar1Valor}
           valorObjetivo={t1Siguiente?.min}
-          unidad="A-E"
+          unidad={esBlipOnly(agenteSlug) ? 'Deja-sol' : 'A-E'}
           tramoActual={{
             label: `${t1Actual.mul}×`,
             recompensa: `${formatSol(comActual.pilar1.aplicado)} este mes`,
           }}
           tramoSiguiente={t1Siguiente ? {
             label: `${t1Siguiente.mul}×`,
-            recompensa: comProx1
-              ? `Subes a ${formatSol(comProx1.pilar1.aplicado)}`
-              : '',
+            recompensa: comProx1 ? `Subes a ${formatSol(comProx1.pilar1.aplicado)}` : '',
           } : null}
           desafio={t1Siguiente ? {
-            titulo: `Te faltan ${faltanAE} aprobadas-entregadas`,
+            titulo: `Te faltan ${faltanP1} ${meta.pilar1Plural}`,
             detalle: `para alcanzar el tramo de ${t1Siguiente.mul}× y ganar ${formatSol(incrementoP1)} más este mes (total Pilar 1: ${formatSol(comProx1!.pilar1.aplicado)}).`,
           } : null}
           progresoPct={progresoP1}
@@ -243,9 +252,9 @@ function SeccionMetas({
           footer={
             esMesActual && proyec ? (
               <>
-                Al ritmo actual cerrarías abril con{' '}
-                <span className="font-semibold text-ink2 tabular">{proyec.aeProy} aprobadas-entregadas</span>
-                {proyec.aeProy >= (t1Siguiente?.min ?? Infinity) && (
+                Al ritmo actual cerrarías {MES_LABEL[mes].toLowerCase()} con{' '}
+                <span className="font-semibold text-ink2 tabular">{proyec.v1Proy} {meta.pilar1Plural}</span>
+                {proyec.v1Proy >= (t1Siguiente?.min ?? Infinity) && (
                   <span className="text-aqua-700 font-semibold"> · llegarías al siguiente tramo</span>
                 )}
               </>
@@ -253,13 +262,13 @@ function SeccionMetas({
           }
         />
 
-        {/* CARD 3: PILAR 2 — % SOL/ATEN */}
+        {/* CARD 3: PILAR 2 */}
         <MetaProgress
-          eyebrow="Pilar 2 · Productividad de canal"
-          valorActual={m.pctSol}
+          eyebrow={`Pilar 2 · ${meta.pilar2Label}`}
+          valorActual={meta.pilar2Valor}
           decimales={1}
           valorObjetivo={t2Siguiente?.min}
-          unidad="% Sol / Aten"
+          unidad={meta.pilar2Label.split('·')[0].trim()}
           tramoActual={{
             label: t2Actual.label,
             recompensa: comActual.pilar2.aplicado === 0
@@ -268,16 +277,14 @@ function SeccionMetas({
           }}
           tramoSiguiente={t2Siguiente ? {
             label: t2Siguiente.label,
-            recompensa: comProx2
-              ? `Bono pasaría a +${formatSol(comProx2.pilar2.aplicado)}`
-              : '',
+            recompensa: comProx2 ? `Bono pasaría a +${formatSol(comProx2.pilar2.aplicado)}` : '',
           } : null}
           desafio={t2Siguiente ? {
-            titulo: solFaltantesP2 > 0
-              ? `Necesitas ${solFaltantesP2} solicitud${solFaltantesP2 === 1 ? '' : 'es'} más`
-              : `Estás a ${(t2Siguiente.min - m.pctSol).toFixed(1)} pp del próximo tramo`,
-            detalle: solFaltantesP2 > 0
-              ? `con tus ${nf(m.aten)} atenciones actuales, para llegar al ${t2Siguiente.min}% y desbloquear ${formatSol(incrementoP2)} más de bono${comProx2 && comProx2.pilar2.aplicado > 0 ? ` (bono total: ${formatSol(comProx2.pilar2.aplicado)})` : ''}.`
+            titulo: numFaltantesP2 > 0
+              ? `Necesitas ${numFaltantesP2} ${meta.pilar2NumeradorLabel} más`
+              : `Estás a ${(t2Siguiente.min - meta.pilar2Valor).toFixed(1)} pp del próximo tramo`,
+            detalle: numFaltantesP2 > 0
+              ? `con tus ${nf(meta.pilar2Denominador)} atenciones actuales, para llegar al ${t2Siguiente.min}% y desbloquear ${formatSol(incrementoP2)} más de bono${comProx2 && comProx2.pilar2.aplicado > 0 ? ` (bono total: ${formatSol(comProx2.pilar2.aplicado)})` : ''}.`
               : `para sumar ${formatSol(incrementoP2)} adicionales al bono.`,
           } : null}
           progresoPct={progresoP2}
@@ -288,8 +295,8 @@ function SeccionMetas({
             esMesActual && proyec ? (
               <>
                 Proyección al cierre:{' '}
-                <span className="font-semibold text-ink2 tabular">{proyec.pctSolProy.toFixed(1)}%</span>
-                {' '}({nf(proyec.solProy)} solicitudes / {nf(proyec.atenProy)} atenciones)
+                <span className="font-semibold text-ink2 tabular">{proyec.v2Proy.toFixed(1)}%</span>
+                {' '}({nf(proyec.numProy)} {meta.pilar2NumeradorLabel} / {nf(proyec.atenProy)} atenciones)
               </>
             ) : null
           }
@@ -300,13 +307,14 @@ function SeccionMetas({
 }
 
 function CardComisionHero({
-  comActual, proyec, esMesActual, configBase, comVieja,
+  comActual, proyec, esMesActual, configBase, comVieja, mostrarVieja,
 }: {
   comActual: ReturnType<typeof calcularComision>;
-  proyec: { comProy: number; aeProy: number; pctSolProy: number } | null;
+  proyec: { comProy: number } | null;
   esMesActual: boolean;
   configBase: number;
   comVieja: number;
+  mostrarVieja: boolean;
 }) {
   const valorMostrar = esMesActual && proyec ? proyec.comProy : comActual.total;
   const animado = useCountUp(valorMostrar, 1000, 0);
@@ -328,9 +336,13 @@ function CardComisionHero({
           Acumulado al día de hoy:{' '}
           <span className="font-semibold text-white tabular">S/ {acumulado.toLocaleString('es-PE')}</span>
         </p>
-      ) : (
+      ) : mostrarVieja ? (
         <p className="text-[12px] text-blue-200/80 mb-4">
           Esquema antiguo de referencia: {formatSol(comVieja)}
+        </p>
+      ) : (
+        <p className="text-[12px] text-blue-200/80 mb-4">
+          Comisión total del mes
         </p>
       )}
 
@@ -358,8 +370,8 @@ function CardComisionHero({
 
 // ============================================================ HOY
 function SeccionHoy({
-  snapshot, agenteSlug, mes, color,
-}: { snapshot: DataSnapshot; agenteSlug: AgenteSlug; mes: MesKey; color: string }) {
+  snapshot, agenteSlug, mes, color, blipOnly,
+}: { snapshot: DataSnapshot; agenteSlug: AgenteSlug; mes: MesKey; color: string; blipOnly: boolean }) {
   const ag = snapshot.agentes[agenteSlug]!;
   const dia = ag.diario[mes] ?? [];
   if (dia.length === 0) return null;
@@ -400,19 +412,29 @@ function SeccionHoy({
           delta={delta(hoy.deja, ayer?.deja ?? null)}
           hint={`Acumulado del mes: ${nf(cumDeja)}`}
         />
+        {!blipOnly && (
+          <Kpi
+            label="Aprobadas-entregadas hoy"
+            value={nf(hoy.ae)}
+            accent="#D1A646"
+            delta={delta(hoy.ae, ayer?.ae ?? null)}
+            hint={`Acumulado del mes: ${nf(cumAE)}`}
+          />
+        )}
         <Kpi
-          label="Aprobadas-entregadas hoy"
-          value={nf(hoy.ae)}
-          accent="#D1A646"
-          delta={delta(hoy.ae, ayer?.ae ?? null)}
-          hint={`Acumulado del mes: ${nf(cumAE)}`}
-        />
-        <Kpi
-          label="Conversión del día"
+          label={blipOnly ? '% Deja / Aten del día' : 'Conversión del día'}
           value={hoy.aten > 0 ? `${(hoy.deja / hoy.aten * 100).toFixed(1)}%` : '—'}
           accent="#00A29B"
-          hint="Cuántas conversaciones piden financiamiento"
+          hint={blipOnly ? 'Tu indicador del Pilar 2' : 'Cuántas conversaciones piden financiamiento'}
         />
+        {blipOnly && (
+          <Kpi
+            label="Acumulado mes"
+            value={nf(cumDeja)}
+            accent="#D1A646"
+            hint="Deja-solicitud del mes hasta hoy"
+          />
+        )}
       </div>
     </section>
   );
@@ -420,17 +442,27 @@ function SeccionHoy({
 
 // ============================================================ ESQUEMA
 function SeccionEsquema({
-  config, aeTot, pctSol, color,
+  config, agenteSlug, snapshot, mes, color,
 }: {
-  config: ComisionConfig; aeTot: number; pctSol: number; color: string;
+  config: ComisionConfig; agenteSlug: AgenteSlug; snapshot: DataSnapshot; mes: MesKey; color: string;
 }) {
+  const m = metricasAgente(snapshot, agenteSlug, mes);
+  const meta = metricasMeta(agenteSlug, m);
   return (
     <section>
       <h2 className="font-display text-[18px] font-semibold text-ink mb-4 flex items-center gap-2">
         <span className="w-1 h-5 rounded-full" style={{ background: color }} />
         Tu esquema de comisiones
       </h2>
-      <EsquemaComisiones config={config} aeTot={aeTot} pctSol={pctSol} agenteColor={color} />
+      <EsquemaComisiones
+        config={config}
+        agenteSlug={agenteSlug}
+        pilar1Valor={meta.pilar1Valor}
+        pilar2Valor={meta.pilar2Valor}
+        pilar1Etiqueta={meta.pilar1Plural}
+        pilar2NumeradorEtiqueta={meta.pilar2NumeradorLabel}
+        agenteColor={color}
+      />
     </section>
   );
 }
@@ -457,13 +489,20 @@ function SeccionDesempeno({
 
       <div className="mb-5">
         <ChipGroup
-          options={[
-            { value: 'resumen',     label: 'Resumen' },
-            { value: 'atenciones',  label: 'Atenciones' },
-            { value: 'solicitudes', label: 'Solicitudes y A-E' },
-            { value: 'canales',     label: 'Canales' },
-            { value: 'horarios',    label: 'Horarios' },
-          ]}
+          options={(esBlipOnly(spec.slug)
+            ? [
+                { value: 'resumen',     label: 'Resumen' },
+                { value: 'atenciones',  label: 'Atenciones' },
+                { value: 'canales',     label: 'Canales' },
+                { value: 'horarios',    label: 'Horarios' },
+              ]
+            : [
+                { value: 'resumen',     label: 'Resumen' },
+                { value: 'atenciones',  label: 'Atenciones' },
+                { value: 'solicitudes', label: 'Solicitudes y A-E' },
+                { value: 'canales',     label: 'Canales' },
+                { value: 'horarios',    label: 'Horarios' },
+              ]) as Array<{ value: Seccion; label: string }>}
           value={seccion}
           onChange={setSeccion}
         />
@@ -473,8 +512,18 @@ function SeccionDesempeno({
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Kpi label="Atenciones del mes" value={nf(m.aten)} accent="#4453A0" size="lg" hint="Conversaciones cerradas en Blip" />
           <Kpi label="Deja solicitud" value={nf(m.deja)} accent="#6873D7" size="lg" hint={`${pct(m.pctDeja, 1)} de las atenciones`} />
-          <Kpi label="Solicitudes" value={nf(m.sol)} accent="#00A29B" size="lg" hint="Atribuidas por tu cupón" />
-          <Kpi label="Aprobadas-entregadas" value={nf(m.aeTot)} accent="#D1A646" size="lg" hint={`Cupón ${nf(m.aeCup)} · Preowner ${nf(m.aePre)}`} />
+          {!esBlipOnly(spec.slug) && (
+            <Kpi label="Solicitudes" value={nf(m.sol)} accent="#00A29B" size="lg" hint="Atribuidas por tu cupón" />
+          )}
+          {!esBlipOnly(spec.slug) && (
+            <Kpi label="Aprobadas-entregadas" value={nf(m.aeTot)} accent="#D1A646" size="lg" hint={`Cupón ${nf(m.aeCup)} · Preowner ${nf(m.aePre)}`} />
+          )}
+          {esBlipOnly(spec.slug) && (
+            <Kpi label="% Deja / Aten" value={pct(m.pctDeja, 1)} accent="#00A29B" size="lg" hint="Tu indicador para el Pilar 2" />
+          )}
+          {esBlipOnly(spec.slug) && (
+            <Kpi label="Cola promedio" value={nf(m.qtAvg, 1)} unit="min" accent="#D1A646" size="lg" hint="Tiempo promedio de espera" />
+          )}
         </div>
       )}
 
@@ -635,10 +684,12 @@ function SeccionHistorico({
   mesesDisponibles: MesKey[]; color: string; config: ComisionConfig;
 }) {
   if (mesesDisponibles.length < 2) return null;
+  const blipOnly = esBlipOnly(agenteSlug);
 
   const filas = mesesDisponibles.map(m => {
     const met = snapshot.agentes[agenteSlug]!.meses[m]!;
-    const com = calcularComision(met.aeTot, met.pctSol, config).total;
+    const meta = metricasMeta(agenteSlug, met);
+    const com = calcularComisionPorAgente(agenteSlug, meta.pilar1Valor, meta.pilar2Valor, config).total;
     return { mes: m, met, com };
   });
 
@@ -655,9 +706,10 @@ function SeccionHistorico({
               <tr className="text-left text-muted">
                 <th className="px-6 py-3 font-semibold text-[11px] uppercase tracking-wider">Mes</th>
                 <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Atenciones</th>
-                <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Solicitudes</th>
-                <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">% Sol</th>
-                <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Aprob-Entreg</th>
+                <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Deja sol.</th>
+                {!blipOnly && <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Solicitudes</th>}
+                <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">{blipOnly ? '% Deja' : '% Sol'}</th>
+                {!blipOnly && <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Aprob-Entreg</th>}
                 <th className="px-6 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Comisión</th>
               </tr>
             </thead>
@@ -671,9 +723,10 @@ function SeccionHistorico({
                     </div>
                   </td>
                   <td className="px-3 py-3 text-right tabular">{nf(f.met.aten)}</td>
-                  <td className="px-3 py-3 text-right tabular">{nf(f.met.sol)}</td>
-                  <td className="px-3 py-3 text-right tabular text-muted">{pct(f.met.pctSol, 1)}</td>
-                  <td className="px-3 py-3 text-right tabular">{nf(f.met.aeTot)}</td>
+                  <td className="px-3 py-3 text-right tabular">{nf(f.met.deja)}</td>
+                  {!blipOnly && <td className="px-3 py-3 text-right tabular">{nf(f.met.sol)}</td>}
+                  <td className="px-3 py-3 text-right tabular text-muted">{pct(blipOnly ? f.met.pctDeja : f.met.pctSol, 1)}</td>
+                  {!blipOnly && <td className="px-3 py-3 text-right tabular">{nf(f.met.aeTot)}</td>}
                   <td className="px-6 py-3 text-right">
                     <span className="font-display font-semibold text-ink tabular">{formatSol(f.com)}</span>
                   </td>

@@ -2,36 +2,55 @@
 
 import { Card, CardHeader } from './Card';
 import { formatSol } from '@/lib/domain/comisiones';
-import type { ComisionConfig } from '@/lib/domain/types';
+import { basePara, tramosP1Para, tramosP2Para } from '@/lib/domain/helpers';
+import { esBlipOnly } from '@/lib/domain/agentes';
+import type { AgenteSlug, ComisionConfig } from '@/lib/domain/types';
 
 /**
  * Tabla visual del esquema de comisiones, marcando el tramo activo
- * para los valores actuales (aeTot, pctSol).
+ * para los valores actuales del agente.
+ *
+ * Soporta los dos esquemas: el general (AE + %Sol/Aten) y el blip-only (Luz).
  */
 export function EsquemaComisiones({
   config,
-  aeTot,
-  pctSol,
+  agenteSlug,
+  pilar1Valor,
+  pilar2Valor,
+  pilar1Etiqueta,
+  pilar2NumeradorEtiqueta,
   agenteColor,
 }: {
   config: ComisionConfig;
-  aeTot: number;
-  pctSol: number;
+  agenteSlug: AgenteSlug;
+  /** Valor actual del Pilar 1: AE para la mayoría, deja-sol para Luz */
+  pilar1Valor: number;
+  /** Valor actual del Pilar 2: %Sol/Aten para la mayoría, %Deja/Aten para Luz */
+  pilar2Valor: number;
+  /** Etiqueta plural del numerador del P1 (ej. "aprobadas-entregadas", "deja-solicitud") */
+  pilar1Etiqueta: string;
+  /** Etiqueta del numerador del P2 (ej. "solicitudes", "deja-solicitud") */
+  pilar2NumeradorEtiqueta: string;
   agenteColor: string;
 }) {
-  const baseSol = config.baseSol;
+  const baseSol = basePara(agenteSlug, config);
+  const tramos1 = tramosP1Para(agenteSlug, config);
+  const tramos2 = tramosP2Para(agenteSlug, config);
+  const blipOnly = esBlipOnly(agenteSlug);
 
   const tramoP1Idx = (() => {
     let idx = 0;
-    config.pilar1.forEach((t, i) => { if (aeTot >= t.min) idx = i; });
+    tramos1.forEach((t, i) => { if (pilar1Valor >= t.min) idx = i; });
     return idx;
   })();
 
   const tramoP2Idx = (() => {
     let idx = 0;
-    config.pilar2.forEach((t, i) => { if (pctSol >= t.min) idx = i; });
+    tramos2.forEach((t, i) => { if (pilar2Valor >= t.min) idx = i; });
     return idx;
   })();
+
+  const p1Capitalizada = pilar1Etiqueta.charAt(0).toUpperCase() + pilar1Etiqueta.slice(1);
 
   return (
     <Card padding="p-0">
@@ -49,14 +68,16 @@ export function EsquemaComisiones({
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-1">
               <span className="font-display font-bold text-[12px]" style={{ color: agenteColor }}>P1</span>
-              <h4 className="font-display font-semibold text-[14px] text-ink">Aprobadas-Entregadas × Multiplicador</h4>
+              <h4 className="font-display font-semibold text-[14px] text-ink">{p1Capitalizada} × Multiplicador</h4>
             </div>
             <p className="text-[11.5px] text-muted">
-              Sumamos todas tus aprobadas-entregadas del mes (cupón + preowner) y aplicamos el multiplicador del tramo a la base de {formatSol(baseSol)}.
+              {blipOnly
+                ? `Sumamos todos los chats que tipificaste como "Deja solicitud" en el mes y aplicamos el multiplicador del tramo a la base de ${formatSol(baseSol)}.`
+                : `Sumamos todas tus aprobadas-entregadas del mes (cupón + preowner) y aplicamos el multiplicador del tramo a la base de ${formatSol(baseSol)}.`}
             </p>
           </div>
           <div className="space-y-1.5">
-            {config.pilar1.map((t, i) => {
+            {tramos1.map((t, i) => {
               const activo = i === tramoP1Idx;
               const aplicado = Math.round(baseSol * t.mul);
               return (
@@ -76,7 +97,7 @@ export function EsquemaComisiones({
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{
                         background: agenteColor,
-                        opacity: 0.25 + (i / config.pilar1.length) * 0.75,
+                        opacity: 0.25 + (i / tramos1.length) * 0.75,
                       }}
                     />
                     <div>
@@ -109,14 +130,18 @@ export function EsquemaComisiones({
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-1">
               <span className="font-display font-bold text-[12px] text-gold-600">P2</span>
-              <h4 className="font-display font-semibold text-[14px] text-ink">% Solicitudes / Atenciones → Bono</h4>
+              <h4 className="font-display font-semibold text-[14px] text-ink">
+                {blipOnly ? '% Deja-sol / Atenciones → Bono' : '% Solicitudes / Atenciones → Bono'}
+              </h4>
             </div>
             <p className="text-[11.5px] text-muted">
-              Bono adicional según el porcentaje de solicitudes ingresadas (con tu cupón) sobre las atenciones de Blip.
+              {blipOnly
+                ? 'Bono adicional según el porcentaje de chats con "Deja solicitud" sobre las atenciones totales del mes.'
+                : 'Bono adicional según el porcentaje de solicitudes ingresadas (con tu cupón) sobre las atenciones de Blip.'}
             </p>
           </div>
           <div className="space-y-1.5">
-            {config.pilar2.map((t, i) => {
+            {tramos2.map((t, i) => {
               const activo = i === tramoP2Idx;
               return (
                 <div
@@ -135,13 +160,13 @@ export function EsquemaComisiones({
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{
                         background: '#D1A646',
-                        opacity: 0.25 + (i / config.pilar2.length) * 0.75,
+                        opacity: 0.25 + (i / tramos2.length) * 0.75,
                       }}
                     />
                     <div>
                       <div className="font-semibold text-[12.5px] text-ink">{t.label}</div>
                       <div className="text-[10.5px] text-muted">
-                        {t.bono === 0 ? 'Sin bono' : i === config.pilar2.length - 1 ? 'Bono máximo' : i === 1 ? 'Bono básico' : 'Bono medio'}
+                        {t.bono === 0 ? 'Sin bono' : i === tramos2.length - 1 ? 'Bono máximo' : i === 1 ? 'Bono básico' : 'Bono medio'}
                       </div>
                     </div>
                   </div>

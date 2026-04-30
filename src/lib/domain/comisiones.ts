@@ -1,4 +1,5 @@
-import type { ComisionConfig, MetricasMes, TramoP1, TramoP2 } from './types';
+import { esBlipOnly } from './agentes';
+import type { AgenteSlug, ComisionConfig, MetricasMes, TramoP1, TramoP2 } from './types';
 
 export interface CalculoComision {
   baseSol: number;
@@ -56,6 +57,33 @@ export function calcularComision(
   const aplicadoP2 = t2.bono;
   return {
     baseSol: cfg.baseSol,
+    pilar1: { tramo: t1, aplicado: aplicadoP1 },
+    pilar2: { tramo: t2, aplicado: aplicadoP2 },
+    total: aplicadoP1 + aplicadoP2,
+  };
+}
+
+/**
+ * Cálculo de comisión por agente: usa el esquema correcto según
+ * el slug (Luz tiene su propio set de tramos basado en Deja-sol).
+ */
+export function calcularComisionPorAgente(
+  slug: AgenteSlug,
+  pilar1Valor: number,
+  pilar2Valor: number,
+  cfg: ComisionConfig,
+): CalculoComision {
+  const blipOnly = esBlipOnly(slug);
+  const tramos1 = blipOnly && cfg.pilarLuz1 ? cfg.pilarLuz1 : cfg.pilar1;
+  const tramos2 = blipOnly && cfg.pilarLuz2 ? cfg.pilarLuz2 : cfg.pilar2;
+  const base = blipOnly && cfg.baseLuzSol != null ? cfg.baseLuzSol : cfg.baseSol;
+
+  const t1 = tramoP1(pilar1Valor, tramos1);
+  const t2 = tramoP2(pilar2Valor, tramos2);
+  const aplicadoP1 = Math.round(base * t1.mul);
+  const aplicadoP2 = t2.bono;
+  return {
+    baseSol: base,
     pilar1: { tramo: t1, aplicado: aplicadoP1 },
     pilar2: { tramo: t2, aplicado: aplicadoP2 },
     total: aplicadoP1 + aplicadoP2,

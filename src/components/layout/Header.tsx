@@ -30,7 +30,7 @@ export default function Header({
   const router = useRouter();
 
   const items = NAV.filter(n => n.roles.includes(rol));
-  const isAsesora = rol === 'fernanda' || rol === 'stefania' || rol === 'julio';
+  const isAsesora = rol === 'fernanda' || rol === 'stefania' || rol === 'julio' || rol === 'luz';
   if (isAsesora) {
     items.push({ href: `/agente/${rol}`, label: 'Mi dashboard', roles: [rol] });
   }
@@ -51,8 +51,8 @@ export default function Header({
             <span className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-aqua-500" aria-hidden />
           </div>
           <div>
-            <div className="font-display font-semibold text-[15px] text-ink leading-none">BaldeCash</div>
-            <div className="text-[10.5px] uppercase tracking-[0.14em] text-muted mt-0.5">SAE · Plataforma de gestión</div>
+            <div className="font-display font-semibold text-[15px] text-ink leading-none">BaldeCash · <span style={{ color: '#00A29B' }}>Rumbo</span></div>
+            <div className="text-[10.5px] uppercase tracking-[0.14em] text-muted mt-0.5">Tu equipo, sus metas</div>
           </div>
         </Link>
 

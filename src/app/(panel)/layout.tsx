@@ -18,7 +18,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
       />
       <main className="flex-1 px-6 lg:px-10 py-7">{children}</main>
       <footer className="border-t border-line bg-white px-6 lg:px-10 py-4 text-[11px] text-muted2">
-        © {new Date().getFullYear()} BaldeCash · Plataforma SAE · Uso interno
+        © {new Date().getFullYear()} BaldeCash · Rumbo · Uso interno
       </footer>
     </div>
   );

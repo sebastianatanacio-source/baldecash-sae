@@ -7,7 +7,7 @@ import { Pill } from '@/components/ui/Chips';
 import { fechaCorta, nf } from '@/lib/domain/helpers';
 import type { ComisionConfig, SnapshotMeta } from '@/lib/domain/types';
 
-interface UserPub { username: 'admin' | 'jefa' | 'fernanda' | 'stefania' | 'julio'; rol: string; display: string }
+interface UserPub { username: 'admin' | 'jefa' | 'fernanda' | 'stefania' | 'julio' | 'luz'; rol: string; display: string }
 
 export default function AdminView({
   snapshotMeta, config, users,

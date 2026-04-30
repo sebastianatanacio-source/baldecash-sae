@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/session';
 import { changeDisplayName, loadUsers, type Rol } from '@/lib/auth/users';
 
-const ROLES: Rol[] = ['admin', 'jefa', 'fernanda', 'stefania', 'julio'];
+const ROLES: Rol[] = ['admin', 'jefa', 'fernanda', 'stefania', 'julio', 'luz'];
 
 export const dynamic = 'force-dynamic';
 

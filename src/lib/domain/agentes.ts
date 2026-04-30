@@ -55,9 +55,30 @@ export const AGENTES: Record<AgenteSlug, AgenteSpec> = {
     colorSoft: '#D6DCED', // Blue 100
     username: 'julio',
   },
+  luz: {
+    slug: 'luz',
+    nombre: 'Luz Rojas',
+    initials: 'LR',
+    cupon: '',     // No tiene cupón propio
+    preowner: '',  // Tampoco aparece como preowner en Admin
+    matchBlip: [/luz/i],
+    color: '#6873D7',     // Blue 300 (lavanda)
+    colorSoft: '#D6DCED', // Blue 100
+    username: 'luz',
+  },
 };
 
-export const AGENTES_LIST: AgenteSpec[] = [AGENTES.fernanda, AGENTES.stefania, AGENTES.julio];
+export const AGENTES_LIST: AgenteSpec[] = [
+  AGENTES.fernanda, AGENTES.stefania, AGENTES.julio, AGENTES.luz,
+];
+
+/** Agentes que solo se actualizan con Blip (sin atribución por cupón en Admin). */
+export const AGENTES_BLIP_ONLY = new Set<AgenteSlug>(['luz']);
+
+/** ¿Este agente usa el esquema Blip-only (Deja-sol en lugar de AE)? */
+export function esBlipOnly(slug: AgenteSlug): boolean {
+  return AGENTES_BLIP_ONLY.has(slug);
+}
 
 /** Detecta el slug del agente a partir del campo AgentName del CSV de Blip. */
 export function detectarAgente(agentName: string | null | undefined): AgenteSlug | null {

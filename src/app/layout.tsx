@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'BaldeCash · SAE',
-  description: 'Plataforma de gestión, metas y comisiones del equipo SAE — BaldeCash.',
+  title: 'BaldeCash · Rumbo',
+  description: 'Rumbo — seguimiento de metas, comisiones y desempeño del equipo SAE de BaldeCash.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

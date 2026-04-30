@@ -12,7 +12,7 @@ import type { AgenteSlug } from '@/lib/domain/types';
 // nunca puede prerenderizarse estáticamente.
 export const dynamic = 'force-dynamic';
 
-const VALIDOS: AgenteSlug[] = ['fernanda', 'stefania', 'julio'];
+const VALIDOS: AgenteSlug[] = ['fernanda', 'stefania', 'julio', 'luz'];
 
 export default async function AgentePage({
   params,
@@ -21,7 +21,7 @@ export default async function AgentePage({
   if (!session.rol) redirect('/login');
   const { slug } = await params;
   if (!VALIDOS.includes(slug as AgenteSlug)) notFound();
-  if (!puedeVerAgente(session.rol, slug as 'fernanda' | 'stefania' | 'julio')) {
+  if (!puedeVerAgente(session.rol, slug as 'fernanda' | 'stefania' | 'julio' | 'luz')) {
     redirect('/resumen');
   }
 

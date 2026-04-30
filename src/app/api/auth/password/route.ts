@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/session';
 import { changePassword, verifyCredentials, type Rol } from '@/lib/auth/users';
 
-const ROLES: Rol[] = ['admin', 'jefa', 'fernanda', 'stefania', 'julio'];
+const ROLES: Rol[] = ['admin', 'jefa', 'fernanda', 'stefania', 'julio', 'luz'];
 
 export async function POST(req: Request) {
   const session = await getSession();
