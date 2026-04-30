@@ -21,6 +21,13 @@ interface BlipAcc {
   tags: Map<string, number>;
   diario: Map<string, { aten: number; deja: number; dow: number }>;
   hora: number[]; // 24
+  // ============== Para Luz (SAE) ==============
+  cerradas: number;
+  solucionadas: number;
+  noContesta: number;
+  transferidas: number;
+  /** Lista de FRT en segundos para calcular mediana */
+  frtSegs: number[];
 }
 
 const newAcc = (): BlipAcc => ({
@@ -30,7 +37,48 @@ const newAcc = (): BlipAcc => ({
   tags: new Map(),
   diario: new Map(),
   hora: new Array(24).fill(0),
+  cerradas: 0, solucionadas: 0, noContesta: 0, transferidas: 0,
+  frtSegs: [],
 });
+
+/**
+ * Universo unificado de tipificaciones que cuentan como "solucionada"
+ * para el cálculo de comisiones de SAE (Luz). Combina el esquema histórico
+ * (vigente antes del 15-abr-2026) con el esquema nuevo de Meylin.
+ *
+ * El match se hace contra la tipificación normalizada en lowercase.
+ */
+const TAGS_SOLUCIONADAS = new Set([
+  // Esquema histórico (antes del 15-abr-2026)
+  'consulta solucionada',
+  'derivado a otra área',
+  'derivado a otra area',
+  'consultas zona estudiante',
+  'desbloqueo de equipos',
+  // Esquema nuevo (desde el 15-abr-2026 — definido por Meylin)
+  'desbloqueo equipos',
+  'desbloqueo celular',
+  'consultas admin',
+  'derivado a soporte t.',
+  'derivado a soporte tecnico',
+  'derivado a cobranzas',
+  'consultas logística',
+  'consultas logistica',
+  'quejas/reclamos',
+  'quejas y reclamos',
+]);
+
+const TAGS_NO_CONTESTA = new Set([
+  'no contesta',
+  'no es estudiante',
+  'cliente no contesta',
+  'ticket cerrado por inactividad',
+  'consulta no respondida',
+]);
+
+function normalizar(tag: string): string {
+  return tag.trim().toLowerCase().replace(/\s+/g, ' ');
+}
 
 export interface BlipResultado {
   /** Por agente y mes */
@@ -112,14 +160,35 @@ export function parseBlipCsv(csvText: string): BlipResultado {
     const tagsRaw = idxTags >= 0 ? (row[idxTags] || '') : '';
     const isDeja = tagsRaw.includes('Deja solicitud');
     if (isDeja) { acc.deja++; dia.deja++; }
+
     // Detectar tags individuales — formato JSON ["a","b"] o texto
-    parseTags(tagsRaw).forEach(t => {
+    const tagsParseados = parseTags(tagsRaw);
+    let esSolucionada = false;
+    let esNoContesta = false;
+    tagsParseados.forEach(t => {
       acc!.tags.set(t, (acc!.tags.get(t) ?? 0) + 1);
+      const norm = normalizar(t);
+      if (TAGS_SOLUCIONADAS.has(norm)) esSolucionada = true;
+      if (TAGS_NO_CONTESTA.has(norm)) esNoContesta = true;
     });
 
-    // Métricas operativas
+    // Status — "Transferred" cuenta como transferida; el resto como cerrada por la agente
+    const status = (idxStatus >= 0 ? String(row[idxStatus] || '') : '').toLowerCase();
+    const esTransferida = status.includes('transfer');
+    if (esTransferida) acc.transferidas++;
+    else acc.cerradas++;
+
+    if (esSolucionada) acc.solucionadas++;
+    if (esNoContesta) acc.noContesta++;
+
+    // Métricas operativas (en minutos para los promedios actuales)
     pushNum(row[idxQT],  v => { acc!.qtSum += v; acc!.qtN++; });
-    pushNum(row[idxFRT], v => { acc!.frtSum += v; acc!.frtN++; });
+    pushNum(row[idxFRT], v => {
+      acc!.frtSum += v;
+      acc!.frtN++;
+      // También guardamos en segundos para calcular mediana después
+      acc!.frtSegs.push(v * 60);
+    });
     pushNum(row[idxART], v => { acc!.artSum += v; acc!.artN++; });
 
     // Canal
@@ -136,12 +205,35 @@ export function parseBlipCsv(csvText: string): BlipResultado {
   };
 }
 
-/** Suelo de seguridad: descarta filas con QT/FRT/ART > 1000 (artefactos de cierre tardío). */
+/**
+ * Parsea un valor de duración a minutos. Acepta:
+ *   - Número directo (ya en minutos): "1.5", "2,3"
+ *   - Formato "Xd HH:MM:SS" del export de Blip: "0d 00:01:24"
+ *   - "186.79 s" (segundos con sufijo)
+ * Descarta valores > 1000 minutos (artefactos de cierre tardío).
+ */
 function pushNum(raw: string | undefined, cb: (v: number) => void) {
   if (raw == null || raw === '') return;
-  const v = parseFloat(String(raw).replace(',', '.'));
-  if (!Number.isFinite(v) || v < 0 || v > 1000) return;
-  cb(v);
+  const minutos = parseDuracionMin(String(raw).trim());
+  if (minutos == null) return;
+  if (minutos < 0 || minutos > 1000) return;
+  cb(minutos);
+}
+
+function parseDuracionMin(s: string): number | null {
+  if (!s) return null;
+  // Formato "Xd HH:MM:SS" — Blip
+  const m = s.match(/^(\d+)d\s+(\d{1,2}):(\d{2}):(\d{2}(?:\.\d+)?)/);
+  if (m) {
+    const dias = +m[1], hh = +m[2], mm = +m[3], ss = parseFloat(m[4]);
+    return dias * 1440 + hh * 60 + mm + ss / 60;
+  }
+  // "186.79 s" o "186.79s"
+  const sg = s.match(/^([\d,]+\.?\d*)\s*s$/i);
+  if (sg) return parseFloat(sg[1].replace(',', '.')) / 60;
+  // Número directo (asumimos minutos)
+  const num = parseFloat(s.replace(',', '.'));
+  return Number.isFinite(num) ? num : null;
 }
 
 function parseDateTime(s: string): Date | null {

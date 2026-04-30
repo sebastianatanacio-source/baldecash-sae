@@ -32,11 +32,25 @@ export interface MetricasMes {
   frtAvg: number;
   /** Tiempo de respuesta entre mensajes (min) */
   artAvg: number;
+  /** FRT mediana en segundos — clave para el guardrail de Luz */
+  frtMedianaSeg: number;
 
   /** Distribución por canal: WhatsApp / Facebook / Otro */
   canales: { whatsapp: number; facebook: number; otro: number };
   /** Distribución por tag de cierre — top 8 (resto agregado en "otros") */
   tags: Array<{ tag: string; n: number }>;
+
+  // ============== Métricas específicas para SAE / Luz ==============
+  /** Total de tickets cerrados por la agente (no transferidos) */
+  cerradas: number;
+  /** Conversaciones tipificadas con cualquier tag del universo "solucionadas" */
+  solucionadas: number;
+  /** Conversaciones tipificadas como "No contesta" o similares */
+  noContesta: number;
+  /** Conversaciones transferidas a otra cola (Status = Transferred) */
+  transferidas: number;
+  /** % Resolución sobre contestadas: solucionadas / (cerradas - noContesta) · 100 */
+  pctResolucion: number;
 }
 
 export interface SerieDiariaPunto {
@@ -143,17 +157,19 @@ export const DEFAULT_CONFIG: ComisionConfig = {
     { min: 8,  bono: 300, label: '8% – 10.9%' },
     { min: 11, bono: 500, label: '11% o más' },
   ],
+  // Esquema de Luz — basado en consultas solucionadas (universo unificado)
+  // Meta mensual: 1,100 solucionadas (50/día L-V)
   pilarLuz1: [
-    { min: 0,   mul: 1.0,  label: 'Menos de 100 Deja-sol.' },
-    { min: 100, mul: 1.25, label: '100 – 149 Deja-sol.' },
-    { min: 150, mul: 1.5,  label: '150 – 199 Deja-sol.' },
-    { min: 200, mul: 2.0,  label: '200+ Deja-sol.' },
+    { min: 0,    mul: 0,    label: 'Bajo piso · menos de 900' },
+    { min: 900,  mul: 1.0,  label: 'Mínimo · 900 – 1,099' },
+    { min: 1100, mul: 1.25, label: 'Esperado · 1,100 – 1,299' },
+    { min: 1300, mul: 1.5,  label: 'Sobre meta · 1,300+' },
   ],
+  // Guardrail de calidad: % resolución sobre contestadas debe ser ≥ 60%
+  // Para Luz, el "Pilar 2" es un gate: si no pasa, la comisión del Pilar 1 se pierde.
   pilarLuz2: [
-    { min: 0,  bono: 0,   label: 'Menos de 8%' },
-    { min: 8,  bono: 100, label: '8% – 9.9%' },
-    { min: 10, bono: 300, label: '10% – 11.9%' },
-    { min: 12, bono: 500, label: '12% o más' },
+    { min: 0,  bono: 0,   label: 'Resolución < 60% · sin bono' },
+    { min: 60, bono: 200, label: '60% o más · pasa el guardrail' },
   ],
   viejaCupon: 20,
   viejaPreowner: 12,

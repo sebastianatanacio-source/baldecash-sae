@@ -17,9 +17,10 @@ export function pct(n: number, decimals = 1): string {
 const VACIO: MetricasMes = {
   aten: 0, deja: 0, pctDeja: 0,
   sol: 0, aeCup: 0, aePre: 0, aeTot: 0, pctSol: 0,
-  qtAvg: 0, frtAvg: 0, artAvg: 0,
+  qtAvg: 0, frtAvg: 0, artAvg: 0, frtMedianaSeg: 0,
   canales: { whatsapp: 0, facebook: 0, otro: 0 },
   tags: [],
+  cerradas: 0, solucionadas: 0, noContesta: 0, transferidas: 0, pctResolucion: 0,
 };
 
 /** Suma simple por clave numérica */
@@ -41,23 +42,30 @@ export function combinarMetricas(metricas: MetricasMes[]): MetricasMes {
   let qtSumW = 0, qtN = 0;
   let frtSumW = 0, frtN = 0;
   let artSumW = 0, artN = 0;
+  let frtMedSumW = 0, frtMedN = 0;
 
   for (const m of metricas) {
-    add(out, m, ['aten', 'deja', 'sol', 'aeCup', 'aePre', 'aeTot']);
+    add(out, m, ['aten', 'deja', 'sol', 'aeCup', 'aePre', 'aeTot',
+      'cerradas', 'solucionadas', 'noContesta', 'transferidas']);
     out.canales.whatsapp += m.canales.whatsapp;
     out.canales.facebook += m.canales.facebook;
     out.canales.otro     += m.canales.otro;
     for (const t of m.tags) tagAcc.set(t.tag, (tagAcc.get(t.tag) ?? 0) + t.n);
-    // promedios ponderados por # atenciones (no perfecto pero razonable cuando no tenemos sumas crudas por cada celda)
+    // promedios ponderados por # atenciones
     if (m.qtAvg > 0)  { qtSumW  += m.qtAvg  * m.aten; qtN  += m.aten; }
     if (m.frtAvg > 0) { frtSumW += m.frtAvg * m.aten; frtN += m.aten; }
     if (m.artAvg > 0) { artSumW += m.artAvg * m.aten; artN += m.aten; }
+    if (m.frtMedianaSeg > 0) { frtMedSumW += m.frtMedianaSeg * m.aten; frtMedN += m.aten; }
   }
   out.pctDeja = out.aten > 0 ? +(out.deja / out.aten * 100).toFixed(1) : 0;
   out.pctSol  = out.aten > 0 ? +(out.sol  / out.aten * 100).toFixed(1) : 0;
   out.qtAvg  = qtN  > 0 ? +(qtSumW  / qtN ).toFixed(2) : 0;
   out.frtAvg = frtN > 0 ? +(frtSumW / frtN).toFixed(2) : 0;
   out.artAvg = artN > 0 ? +(artSumW / artN).toFixed(2) : 0;
+  out.frtMedianaSeg = frtMedN > 0 ? +(frtMedSumW / frtMedN).toFixed(1) : 0;
+  // % Resolución sobre contestadas (cerradas - noContesta)
+  const contestadas = Math.max(0, out.cerradas - out.noContesta);
+  out.pctResolucion = contestadas > 0 ? +(out.solucionadas / contestadas * 100).toFixed(1) : 0;
   out.tags = [...tagAcc.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([tag, n]) => ({ tag, n }));
   return out;
 }
@@ -172,15 +180,18 @@ export function metricasMeta(slug: AgenteSlug, m: MetricasMes): {
   pilar2NumeradorLabel: string;
 } {
   if (esBlipOnly(slug)) {
+    // Luz: Pilar 1 = consultas solucionadas (universo unificado),
+    //      Pilar 2 = % resolución sobre contestadas (guardrail de calidad)
+    const contestadas = Math.max(0, m.cerradas - m.noContesta);
     return {
-      pilar1Valor: m.deja,
-      pilar1Label: 'deja-solicitud del mes',
-      pilar1Plural: 'deja-solicitud',
-      pilar2Valor: m.pctDeja,
-      pilar2Label: '% Deja-sol / Atenciones',
-      pilar2Numerador: m.deja,
-      pilar2Denominador: m.aten,
-      pilar2NumeradorLabel: 'deja-solicitud',
+      pilar1Valor: m.solucionadas,
+      pilar1Label: 'consultas solucionadas',
+      pilar1Plural: 'consultas solucionadas',
+      pilar2Valor: m.pctResolucion,
+      pilar2Label: '% Resolución sobre contestadas',
+      pilar2Numerador: m.solucionadas,
+      pilar2Denominador: contestadas,
+      pilar2NumeradorLabel: 'consultas resueltas',
     };
   }
   return {

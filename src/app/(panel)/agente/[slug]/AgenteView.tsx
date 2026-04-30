@@ -508,23 +508,56 @@ function SeccionDesempeno({
         />
       </div>
 
-      {seccion === 'resumen' && (
+      {seccion === 'resumen' && !esBlipOnly(spec.slug) && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Kpi label="Atenciones del mes" value={nf(m.aten)} accent="#4453A0" size="lg" hint="Conversaciones cerradas en Blip" />
           <Kpi label="Deja solicitud" value={nf(m.deja)} accent="#6873D7" size="lg" hint={`${pct(m.pctDeja, 1)} de las atenciones`} />
-          {!esBlipOnly(spec.slug) && (
-            <Kpi label="Solicitudes" value={nf(m.sol)} accent="#00A29B" size="lg" hint="Atribuidas por tu cupón" />
-          )}
-          {!esBlipOnly(spec.slug) && (
-            <Kpi label="Aprobadas-entregadas" value={nf(m.aeTot)} accent="#D1A646" size="lg" hint={`Cupón ${nf(m.aeCup)} · Preowner ${nf(m.aePre)}`} />
-          )}
-          {esBlipOnly(spec.slug) && (
-            <Kpi label="% Deja / Aten" value={pct(m.pctDeja, 1)} accent="#00A29B" size="lg" hint="Tu indicador para el Pilar 2" />
-          )}
-          {esBlipOnly(spec.slug) && (
-            <Kpi label="Cola promedio" value={nf(m.qtAvg, 1)} unit="min" accent="#D1A646" size="lg" hint="Tiempo promedio de espera" />
-          )}
+          <Kpi label="Solicitudes" value={nf(m.sol)} accent="#00A29B" size="lg" hint="Atribuidas por tu cupón" />
+          <Kpi label="Aprobadas-entregadas" value={nf(m.aeTot)} accent="#D1A646" size="lg" hint={`Cupón ${nf(m.aeCup)} · Preowner ${nf(m.aePre)}`} />
         </div>
+      )}
+
+      {/* Resumen específico para Luz (SAE) — 4 KPIs ejecutivos del reporte original */}
+      {seccion === 'resumen' && esBlipOnly(spec.slug) && (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+            <Kpi
+              label="Atenciones totales"
+              value={nf(m.aten)}
+              accent="#4453A0"
+              size="lg"
+              hint={`${nf(m.cerradas)} cerradas · ${nf(m.transferidas)} transferidas`}
+            />
+            <Kpi
+              label="Consultas solucionadas"
+              value={nf(m.solucionadas)}
+              accent="#00A29B"
+              size="lg"
+              hint={`${pct(m.aten > 0 ? m.solucionadas / m.aten * 100 : 0, 1)} sobre el total`}
+            />
+            <Kpi
+              label="Tasa de resolución"
+              value={pct(m.pctResolucion, 1)}
+              accent={m.pctResolucion >= 60 ? '#00A29B' : '#D1A646'}
+              size="lg"
+              hint={`${m.pctResolucion >= 60 ? '✓ Pasa' : '✗ Falla'} guardrail · sobre contestadas`}
+            />
+            <Kpi
+              label="1ª respuesta · mediana"
+              value={nf(m.frtMedianaSeg, 0)}
+              unit="seg"
+              accent={m.frtMedianaSeg <= 30 ? '#00A29B' : '#D1A646'}
+              size="lg"
+              hint={`${m.frtMedianaSeg <= 30 ? '✓ Pasa' : '✗ Falla'} guardrail · ≤ 30 seg`}
+            />
+          </div>
+          <div className="bg-bg/40 border border-line rounded-xl p-4 grid grid-cols-2 lg:grid-cols-4 gap-3 text-[12px]">
+            <KpiCompact label="Cerradas" value={nf(m.cerradas)} accent="#4453A0" />
+            <KpiCompact label="No contesta" value={nf(m.noContesta)} accent="#D1A646" />
+            <KpiCompact label="Transferidas" value={nf(m.transferidas)} accent="#6873D7" />
+            <KpiCompact label="Deja solicitud" value={nf(m.deja)} accent="#36B7B3" />
+          </div>
+        </>
       )}
 
       {seccion === 'atenciones' && (

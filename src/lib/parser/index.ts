@@ -73,6 +73,7 @@ export async function buildSnapshot(input: BuildSnapshotInput): Promise<BuildSna
       const qtAvg  = b && b.qtN  > 0 ? +(b.qtSum  / b.qtN ).toFixed(2) : 0;
       const frtAvg = b && b.frtN > 0 ? +(b.frtSum / b.frtN).toFixed(2) : 0;
       const artAvg = b && b.artN > 0 ? +(b.artSum / b.artN).toFixed(2) : 0;
+      const frtMedianaSeg = b && b.frtSegs.length > 0 ? +mediana(b.frtSegs).toFixed(1) : 0;
 
       const canales = b?.canales ?? { whatsapp: 0, facebook: 0, otro: 0 };
       const tags = b
@@ -82,11 +83,20 @@ export async function buildSnapshot(input: BuildSnapshotInput): Promise<BuildSna
             .map(([tag, n]) => ({ tag, n }))
         : [];
 
+      const cerradas    = b?.cerradas    ?? 0;
+      const solucionadas = b?.solucionadas ?? 0;
+      const noContesta   = b?.noContesta   ?? 0;
+      const transferidas = b?.transferidas ?? 0;
+      // % Resolución sobre contestadas: contestadas = cerradas - noContesta
+      const contestadas = Math.max(0, cerradas - noContesta);
+      const pctResolucion = contestadas > 0 ? +(solucionadas / contestadas * 100).toFixed(1) : 0;
+
       meses[mes] = {
         aten, deja, pctDeja,
         sol, aeCup, aePre, aeTot, pctSol,
-        qtAvg, frtAvg, artAvg,
+        qtAvg, frtAvg, artAvg, frtMedianaSeg,
         canales, tags,
+        cerradas, solucionadas, noContesta, transferidas, pctResolucion,
       };
 
       // Serie diaria: combinar atenciones/deja de Blip + AE de Admin por día
@@ -168,4 +178,14 @@ function dowFromDDMM(ddmm: string, mes: MesKey, _ctx: MesKey[]): number {
   const [d, m] = ddmm.split('-').map(Number);
   const dt = new Date(2026, (m || 1) - 1, d || 1);
   return (dt.getDay() + 6) % 7;
+}
+
+/** Mediana numérica. Si arr está vacío, devuelve 0. */
+function mediana(arr: number[]): number {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
 }
