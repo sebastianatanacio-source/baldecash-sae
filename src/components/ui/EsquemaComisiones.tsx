@@ -72,7 +72,7 @@ export function EsquemaComisiones({
             </div>
             <p className="text-[11.5px] text-muted">
               {blipOnly
-                ? `Sumamos todos los chats que tipificaste como "Deja solicitud" en el mes y aplicamos el multiplicador del tramo a la base de ${formatSol(baseSol)}.`
+                ? `Sumamos todos los chats que tipificaste dentro del universo unificado de "consultas solucionadas" (esquema histórico + esquema nuevo desde el 15-abr-2026) y aplicamos el multiplicador del tramo a la base de ${formatSol(baseSol)}. Meta mensual: 1,100 solucionadas.`
                 : `Sumamos todas tus aprobadas-entregadas del mes (cupón + preowner) y aplicamos el multiplicador del tramo a la base de ${formatSol(baseSol)}.`}
             </p>
           </div>
@@ -131,12 +131,12 @@ export function EsquemaComisiones({
             <div className="flex items-center gap-2 mb-1">
               <span className="font-display font-bold text-[12px] text-gold-600">P2</span>
               <h4 className="font-display font-semibold text-[14px] text-ink">
-                {blipOnly ? '% Deja-sol / Atenciones → Bono' : '% Solicitudes / Atenciones → Bono'}
+                {blipOnly ? 'Tasa de resolución · Guardrail de calidad' : '% Solicitudes / Atenciones → Bono'}
               </h4>
             </div>
             <p className="text-[11.5px] text-muted">
               {blipOnly
-                ? 'Bono adicional según el porcentaje de chats con "Deja solicitud" sobre las atenciones totales del mes.'
+                ? 'Para cobrar el Pilar 1 tu tasa de resolución sobre contestadas debe ser ≥ 60%. La FRT mediana también debe estar ≤ 30 segundos. Si pasa el guardrail, además recibes el bono de la tabla.'
                 : 'Bono adicional según el porcentaje de solicitudes ingresadas (con tu cupón) sobre las atenciones de Blip.'}
             </p>
           </div>
