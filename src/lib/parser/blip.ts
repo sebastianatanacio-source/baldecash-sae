@@ -77,10 +77,13 @@ const TAGS_SOLUCIONADAS = new Set<string>([
 
 const TAGS_NO_CONTESTA = new Set<string>([
   'no contesta',
-  'no es estudiante',
+  'no contesta mensaje del asesor',
   'cliente no contesta',
-  'ticket cerrado por inactividad',
   'consulta no respondida',
+  'ticket cerrado por inactividad',
+  'no es estudiante',
+  'no quiere que lo vuelvan a contactar',
+  'numero de empresa',
 ]);
 
 /**
