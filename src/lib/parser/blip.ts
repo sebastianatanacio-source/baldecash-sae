@@ -44,31 +44,38 @@ const newAcc = (): BlipAcc => ({
 /**
  * Universo unificado de tipificaciones que cuentan como "solucionada"
  * para el cálculo de comisiones de SAE (Luz). Combina el esquema histórico
- * (vigente antes del 15-abr-2026) con el esquema nuevo de Meylin.
+ * (vigente antes del 15-abr-2026) con el esquema nuevo de Meylin desde el
+ * 15-abr-2026, más alias observados en los CSVs reales (spellings que las
+ * agentes escriben en el día a día).
  *
- * El match se hace contra la tipificación normalizada en lowercase.
+ * Lista alineada 1:1 con SOLUCIONADAS_TAGS del reporte
+ * Reporte_SAE_BaldeCash_28abr2026.html.
+ *
+ * El match se hace contra la tipificación normalizada (lowercase, sin
+ * acentos, espacios colapsados) — los items aquí ya están normalizados.
  */
-const TAGS_SOLUCIONADAS = new Set([
-  // Esquema histórico (antes del 15-abr-2026)
+const TAGS_SOLUCIONADAS = new Set<string>([
+  // Universal
   'consulta solucionada',
-  'derivado a otra área',
-  'derivado a otra area',
-  'consultas zona estudiante',
+  // Histórico (pre 15-abr-2026)
   'desbloqueo de equipos',
-  // Esquema nuevo (desde el 15-abr-2026 — definido por Meylin)
+  'derivado a otra area',
+  // Nuevo esquema (desde el 15-abr-2026 — definido por Meylin)
   'desbloqueo equipos',
   'desbloqueo celular',
+  'consultas zona estudiante',
   'consultas admin',
   'derivado a soporte t.',
-  'derivado a soporte tecnico',
   'derivado a cobranzas',
-  'consultas logística',
   'consultas logistica',
   'quejas/reclamos',
-  'quejas y reclamos',
+  // Alias observados en los CSVs reales (escrituras del día a día)
+  'derivado a soporte tecnico',
+  'desbloqueo equipo',
+  'desbloqueo cel.',
 ]);
 
-const TAGS_NO_CONTESTA = new Set([
+const TAGS_NO_CONTESTA = new Set<string>([
   'no contesta',
   'no es estudiante',
   'cliente no contesta',
@@ -76,8 +83,18 @@ const TAGS_NO_CONTESTA = new Set([
   'consulta no respondida',
 ]);
 
+/**
+ * Normaliza una tipificación para hacer match: minúsculas, sin acentos,
+ * espacios colapsados. Conserva puntuación significativa (`.` y `/`)
+ * que aparece en tags como "Derivado a Soporte T." y "Quejas/Reclamos".
+ */
 function normalizar(tag: string): string {
-  return tag.trim().toLowerCase().replace(/\s+/g, ' ');
+  return tag
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // quita diacríticos (combining marks)
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
 }
 
 export interface BlipResultado {
