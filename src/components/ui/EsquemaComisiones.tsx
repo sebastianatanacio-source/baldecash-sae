@@ -1,7 +1,7 @@
 'use client';
 
 import { Card, CardHeader } from './Card';
-import { formatSol } from '@/lib/domain/comisiones';
+import { calcularComisionLuz, formatSol } from '@/lib/domain/comisiones';
 import { basePara, tramosP1Para, tramosP2Para } from '@/lib/domain/helpers';
 import { esBlipOnly } from '@/lib/domain/agentes';
 import type { AgenteSlug, ComisionConfig } from '@/lib/domain/types';
@@ -37,6 +37,87 @@ export function EsquemaComisiones({
   const tramos1 = tramosP1Para(agenteSlug, config);
   const tramos2 = tramosP2Para(agenteSlug, config);
   const blipOnly = esBlipOnly(agenteSlug);
+
+  // Para Luz mostramos el esquema todo-o-nada
+  if (blipOnly) {
+    const luz = calcularComisionLuz(pilar2Valor, config);
+    return (
+      <Card padding="p-0">
+        <div className="px-6 pt-6 pb-4 border-b border-line">
+          <CardHeader
+            eyebrow="Esquema vigente"
+            title="Cómo se calcula tu comisión"
+            subtitle="Esquema todo-o-nada: pasas el umbral o no comisionas"
+          />
+        </div>
+
+        <div className="p-6">
+          <div className="grid sm:grid-cols-2 gap-3 mb-5">
+            {/* No cumple el umbral */}
+            <div
+              className={`flex items-center justify-between rounded-xl px-4 py-4 border-2 transition-all ${
+                !luz.cumple ? 'shadow-card' : ''
+              }`}
+              style={{
+                background: !luz.cumple ? '#FFF7E6' : '#FAFBFE',
+                borderColor: !luz.cumple ? '#D1A646' : '#E4E7F2',
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <span className="w-2 h-2 rounded-full bg-gold-400 shrink-0" />
+                <div>
+                  <div className="font-semibold text-[13px] text-ink">{`< ${luz.umbralPct}% de resolución`}</div>
+                  <div className="text-[11px] text-muted mt-0.5">No comisiona este mes</div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-display font-semibold text-[18px] tabular text-gold-700">{formatSol(0)}</div>
+                {!luz.cumple && (
+                  <div className="text-[9.5px] uppercase tracking-wider font-bold text-gold-700 mt-0.5">Estado actual</div>
+                )}
+              </div>
+            </div>
+
+            {/* Cumple el umbral */}
+            <div
+              className={`flex items-center justify-between rounded-xl px-4 py-4 border-2 transition-all ${
+                luz.cumple ? 'shadow-card' : ''
+              }`}
+              style={{
+                background: luz.cumple ? agenteColor + '14' : '#FAFBFE',
+                borderColor: luz.cumple ? agenteColor : '#E4E7F2',
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: agenteColor }} />
+                <div>
+                  <div className="font-semibold text-[13px] text-ink">{`≥ ${luz.umbralPct}% de resolución`}</div>
+                  <div className="text-[11px] text-muted mt-0.5">Comisión completa</div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-display font-semibold text-[18px] tabular" style={{ color: agenteColor }}>
+                  {formatSol(luz.bono)}
+                </div>
+                {luz.cumple && (
+                  <div className="text-[9.5px] uppercase tracking-wider font-bold mt-0.5" style={{ color: agenteColor }}>
+                    Estado actual
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-bg/40 border border-line rounded-lg p-4 text-[12.5px] text-ink2 leading-relaxed">
+            <p className="font-semibold text-ink mb-1.5">Cómo se mide</p>
+            <p className="text-muted">
+              <strong className="text-ink2">Tasa de resolución</strong> = consultas solucionadas (universo unificado de tipificaciones SAE) ÷ conversaciones contestadas (cerradas que no son "no contesta") × 100.
+            </p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   const tramoP1Idx = (() => {
     let idx = 0;

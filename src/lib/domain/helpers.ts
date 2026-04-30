@@ -145,22 +145,19 @@ export function solicitudesParaPct(solActual: number, atenActual: number, pctObj
 }
 
 /**
- * Devuelve los tramos correctos del Pilar 1 según el agente:
- * - Blip-only (Luz): tramos basados en "Deja solicitud"
- * - Resto: tramos generales basados en AE
+ * Devuelve los tramos del Pilar 1. Luz no usa este sistema (tiene esquema
+ * todo-o-nada), así que para ella devolvemos los tramos generales como
+ * fallback informativo.
  */
-export function tramosP1Para(slug: AgenteSlug, cfg: ComisionConfig): TramoP1[] {
-  if (esBlipOnly(slug) && cfg.pilarLuz1) return cfg.pilarLuz1;
+export function tramosP1Para(_slug: AgenteSlug, cfg: ComisionConfig): TramoP1[] {
   return cfg.pilar1;
 }
 
-export function tramosP2Para(slug: AgenteSlug, cfg: ComisionConfig): TramoP2[] {
-  if (esBlipOnly(slug) && cfg.pilarLuz2) return cfg.pilarLuz2;
+export function tramosP2Para(_slug: AgenteSlug, cfg: ComisionConfig): TramoP2[] {
   return cfg.pilar2;
 }
 
-export function basePara(slug: AgenteSlug, cfg: ComisionConfig): number {
-  if (esBlipOnly(slug) && cfg.baseLuzSol != null) return cfg.baseLuzSol;
+export function basePara(_slug: AgenteSlug, cfg: ComisionConfig): number {
   return cfg.baseSol;
 }
 

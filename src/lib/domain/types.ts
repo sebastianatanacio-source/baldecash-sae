@@ -135,15 +135,22 @@ export interface ComisionConfig {
   viejaPreowner: number;
 
   /**
-   * Esquema específico para Luz (que no tiene atribución por cupón).
-   * Sus métricas son Blip-only:
-   *   Pilar 1 = cantidad de "Deja solicitud" del mes
-   *   Pilar 2 = % Deja solicitud / Atenciones
-   * Si están omitidos, se usa el esquema general (pilar1/pilar2).
+   * Esquema simple de Luz: si su tasa de resolución (% solucionadas /
+   * contestadas) alcanza el umbral, se comisiona el bono fijo.
+   * No hay pilares, multiplicadores ni escalones.
    */
+  luzEsquema?: {
+    /** Umbral mínimo de % resolución para comisionar (default 60) */
+    umbralPct: number;
+    /** Bono fijo a pagar si se cumple el umbral (default 300) */
+    bono: number;
+  };
+
+  /** @deprecated Se reemplazó por luzEsquema */
   pilarLuz1?: TramoP1[];
+  /** @deprecated Se reemplazó por luzEsquema */
   pilarLuz2?: TramoP2[];
-  /** Base mensual para Luz (si difiere). Por defecto usa baseSol. */
+  /** @deprecated Ya no aplica al modelo de Luz */
   baseLuzSol?: number;
 }
 
@@ -161,20 +168,12 @@ export const DEFAULT_CONFIG: ComisionConfig = {
     { min: 8,  bono: 300, label: '8% – 10.9%' },
     { min: 11, bono: 500, label: '11% o más' },
   ],
-  // Esquema de Luz — basado en consultas solucionadas (universo unificado)
-  // Meta mensual: 1,100 solucionadas (50/día L-V)
-  pilarLuz1: [
-    { min: 0,    mul: 0,    label: 'Bajo piso · menos de 900' },
-    { min: 900,  mul: 1.0,  label: 'Mínimo · 900 – 1,099' },
-    { min: 1100, mul: 1.25, label: 'Esperado · 1,100 – 1,299' },
-    { min: 1300, mul: 1.5,  label: 'Sobre meta · 1,300+' },
-  ],
-  // Guardrail de calidad: % resolución sobre contestadas debe ser ≥ 60%
-  // Para Luz, el "Pilar 2" es un gate: si no pasa, la comisión del Pilar 1 se pierde.
-  pilarLuz2: [
-    { min: 0,  bono: 0,   label: 'Resolución < 60% · sin bono' },
-    { min: 60, bono: 200, label: '60% o más · pasa el guardrail' },
-  ],
+  // Esquema de Luz — todo o nada por umbral de calidad
+  // Si su tasa de resolución llega al umbral, comisiona el bono fijo.
+  luzEsquema: {
+    umbralPct: 60,
+    bono: 300,
+  },
   viejaCupon: 20,
   viejaPreowner: 12,
 };

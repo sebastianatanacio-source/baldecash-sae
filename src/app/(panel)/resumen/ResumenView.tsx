@@ -10,7 +10,7 @@ import DonutChart from '@/components/charts/DonutChart';
 import { AGENTES, AGENTES_LIST } from '@/lib/domain/agentes';
 import { MES_LABEL_CORTO, MES_LABEL } from '@/lib/domain/meses';
 import {
-  calcularComision, calcularComisionPorAgente, formatSol,
+  calcularComision, calcularComisionLuz, calcularComisionPorAgente, formatSol,
   proximoTramoP1, proximoTramoP2, progresoTramo, tramoP1, tramoP2,
 } from '@/lib/domain/comisiones';
 import { esBlipOnly } from '@/lib/domain/agentes';
@@ -360,10 +360,16 @@ function TarjetaAsesora({
   spec: typeof AGENTES.fernanda; snapshot: DataSnapshot; mes: MesKey; config: ComisionConfig;
 }) {
   const m = metricasAgente(snapshot, spec.slug, mes);
+  const blipOnly = esBlipOnly(spec.slug);
+
+  // Card específica para Luz — esquema todo o nada
+  if (blipOnly) {
+    return <TarjetaLuz spec={spec} snapshot={snapshot} mes={mes} config={config} m={m} />;
+  }
+
   const meta = metricasMeta(spec.slug, m);
   const tramos1 = tramosP1Para(spec.slug, config);
   const tramos2 = tramosP2Para(spec.slug, config);
-  const blipOnly = esBlipOnly(spec.slug);
 
   const t1Actual = tramoP1(meta.pilar1Valor, tramos1);
   const t1Sig = proximoTramoP1(meta.pilar1Valor, tramos1);
@@ -530,6 +536,120 @@ function Tipificaciones({ tags, total }: { tags: { tag: string; n: number }[]; t
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ============================================================
+// TARJETA específica de Luz (esquema todo-o-nada)
+// ============================================================
+function TarjetaLuz({
+  spec, snapshot, mes, config, m,
+}: {
+  spec: typeof AGENTES.fernanda;
+  snapshot: DataSnapshot;
+  mes: MesKey;
+  config: ComisionConfig;
+  m: ReturnType<typeof metricasAgente>;
+}) {
+  const luz = calcularComisionLuz(m.pctResolucion, config);
+  const dias = diasTrabajados(snapshot, spec.slug, mes);
+  const total = diasTotalesDelMes(mes);
+  const cerProy = dias > 0 ? proyectarFinDeMes(m.cerradas, dias, total) : m.cerradas;
+  const noConProy = dias > 0 ? proyectarFinDeMes(m.noContesta, dias, total) : m.noContesta;
+  const soluProy = dias > 0 ? proyectarFinDeMes(m.solucionadas, dias, total) : m.solucionadas;
+  const conProy = Math.max(0, cerProy - noConProy);
+  const pctProy = conProy > 0 ? +(soluProy / conProy * 100).toFixed(1) : 0;
+  const luzProy = calcularComisionLuz(pctProy, config);
+  const ppFaltantes = +(luz.umbralPct - m.pctResolucion).toFixed(1);
+
+  const progPct = Math.min(100, (m.pctResolucion / luz.umbralPct) * 100);
+
+  return (
+    <div className="card-surface p-6">
+      <div className="flex items-start justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div
+            className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-display font-bold text-[18px]"
+            style={{ background: spec.color }}
+          >
+            {spec.initials}
+          </div>
+          <div>
+            <div className="font-display text-[18px] font-semibold text-ink leading-tight">{spec.nombre}</div>
+            <div className="text-[11px] text-muted2 mt-0.5">Esquema SAE · todo o nada</div>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] uppercase tracking-wider text-muted2">Comisión proyectada</div>
+          <div className="font-display text-[22px] font-semibold tabular text-ink leading-none mt-1">
+            {formatSol(luzProy.total)}
+          </div>
+          <div className="text-[10.5px] text-muted2 mt-0.5">acumulado: {formatSol(luz.total)}</div>
+        </div>
+      </div>
+
+      {/* Tasa de resolución vs umbral */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10.5px] uppercase tracking-[0.12em] font-bold" style={{ color: spec.color }}>Meta</span>
+            <span className="text-[12px] font-semibold text-ink">Tasa de resolución</span>
+          </div>
+          <div className="flex items-center gap-2 text-[12px]">
+            <span className="font-display font-semibold tabular text-ink">{m.pctResolucion.toFixed(1)}%</span>
+            <span className="text-muted2 tabular">/ {luz.umbralPct}%</span>
+            <span
+              className="px-2 py-0.5 rounded-md text-[10px] font-bold"
+              style={{
+                background: luz.cumple ? spec.colorSoft : '#FFF7E6',
+                color: luz.cumple ? spec.color : '#987933',
+              }}
+            >
+              {luz.cumple ? `cobra ${formatSol(luz.bono)}` : 'sin comisión'}
+            </span>
+          </div>
+        </div>
+        <div className="h-2 bg-bg rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full anim-progress-fill transition-[width] duration-700"
+            style={{ width: `${Math.max(2, progPct)}%`, background: luz.cumple ? spec.color : '#D1A646' }}
+          />
+        </div>
+        <div className="flex items-center justify-between mt-1.5 text-[10.5px]">
+          <span className="text-muted2">Cierre proyectado: <strong className="text-ink2 tabular">{pctProy.toFixed(1)}%</strong></span>
+          {luz.cumple ? (
+            <span className="font-semibold" style={{ color: spec.color }}>Pasa el umbral</span>
+          ) : (
+            <span className="font-semibold text-gold-700">Faltan {ppFaltantes} pp</span>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-5 pt-4 border-t border-line grid grid-cols-3 gap-3 text-[11px]">
+        <div>
+          <div className="text-muted2 uppercase tracking-wider text-[9.5px]">Atenciones</div>
+          <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{nf(m.aten)}</div>
+        </div>
+        <div>
+          <div className="text-muted2 uppercase tracking-wider text-[9.5px]">Solucionadas</div>
+          <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{nf(m.solucionadas)}</div>
+        </div>
+        <div>
+          <div className="text-muted2 uppercase tracking-wider text-[9.5px]">Días trabajados</div>
+          <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{dias}</div>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <Link
+          href={`/agente/${spec.slug}`}
+          className="inline-flex items-center gap-1 text-[12px] font-semibold transition-colors"
+          style={{ color: spec.color }}
+        >
+          Ver dashboard completo →
+        </Link>
+      </div>
     </div>
   );
 }

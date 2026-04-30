@@ -64,8 +64,34 @@ export function calcularComision(
 }
 
 /**
- * Cálculo de comisión por agente: usa el esquema correcto según
- * el slug (Luz tiene su propio set de tramos basado en Deja-sol).
+ * Esquema simple de Luz: si su tasa de resolución (% solucionadas
+ * sobre contestadas) alcanza el umbral, comisiona el bono fijo.
+ * Sin pilares, sin multiplicadores, sin escalones.
+ */
+export interface CalculoLuz {
+  umbralPct: number;
+  bono: number;
+  pctResolucion: number;
+  cumple: boolean;
+  total: number;
+}
+
+export function calcularComisionLuz(pctResolucion: number, cfg: ComisionConfig): CalculoLuz {
+  const umbralPct = cfg.luzEsquema?.umbralPct ?? 60;
+  const bono = cfg.luzEsquema?.bono ?? 300;
+  const cumple = pctResolucion >= umbralPct;
+  return {
+    umbralPct,
+    bono,
+    pctResolucion,
+    cumple,
+    total: cumple ? bono : 0,
+  };
+}
+
+/**
+ * Cálculo de comisión por agente. Para Luz devuelve un CalculoLuz simple;
+ * para el resto, el cálculo de pilares estándar.
  */
 export function calcularComisionPorAgente(
   slug: AgenteSlug,
@@ -73,17 +99,34 @@ export function calcularComisionPorAgente(
   pilar2Valor: number,
   cfg: ComisionConfig,
 ): CalculoComision {
-  const blipOnly = esBlipOnly(slug);
-  const tramos1 = blipOnly && cfg.pilarLuz1 ? cfg.pilarLuz1 : cfg.pilar1;
-  const tramos2 = blipOnly && cfg.pilarLuz2 ? cfg.pilarLuz2 : cfg.pilar2;
-  const base = blipOnly && cfg.baseLuzSol != null ? cfg.baseLuzSol : cfg.baseSol;
+  if (esBlipOnly(slug)) {
+    // Para Luz, "pilar1Valor" se ignora; "pilar2Valor" es la tasa de resolución
+    const luz = calcularComisionLuz(pilar2Valor, cfg);
+    // Adaptamos al shape CalculoComision para no romper consumidores
+    return {
+      baseSol: 0,
+      pilar1: {
+        tramo: { min: 0, mul: 0, label: 'No aplica para Luz' },
+        aplicado: 0,
+      },
+      pilar2: {
+        tramo: {
+          min: luz.umbralPct,
+          bono: luz.bono,
+          label: luz.cumple ? `≥ ${luz.umbralPct}% · cobra ${luz.bono}` : `< ${luz.umbralPct}% · no cobra`,
+        },
+        aplicado: luz.total,
+      },
+      total: luz.total,
+    };
+  }
 
-  const t1 = tramoP1(pilar1Valor, tramos1);
-  const t2 = tramoP2(pilar2Valor, tramos2);
-  const aplicadoP1 = Math.round(base * t1.mul);
+  const t1 = tramoP1(pilar1Valor, cfg.pilar1);
+  const t2 = tramoP2(pilar2Valor, cfg.pilar2);
+  const aplicadoP1 = Math.round(cfg.baseSol * t1.mul);
   const aplicadoP2 = t2.bono;
   return {
-    baseSol: base,
+    baseSol: cfg.baseSol,
     pilar1: { tramo: t1, aplicado: aplicadoP1 },
     pilar2: { tramo: t2, aplicado: aplicadoP2 },
     total: aplicadoP1 + aplicadoP2,

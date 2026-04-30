@@ -13,7 +13,7 @@ import DonutChart from '@/components/charts/DonutChart';
 import { AGENTES, esBlipOnly } from '@/lib/domain/agentes';
 import { MES_LABEL_CORTO, MES_LABEL } from '@/lib/domain/meses';
 import {
-  calcularComision, calcularComisionPorAgente, calcularVieja, formatSol,
+  calcularComision, calcularComisionLuz, calcularComisionPorAgente, calcularVieja, formatSol,
   proximoTramoP1, proximoTramoP2, progresoTramo, tramoP1, tramoP2,
 } from '@/lib/domain/comisiones';
 import {
@@ -204,6 +204,13 @@ function SeccionMetas({
 }) {
   const spec = AGENTES[agenteSlug];
   const m = metricasAgente(snapshot, agenteSlug, mes);
+
+  // Luz tiene un esquema simple sin pilares: su comisión es S/X si pasa
+  // un umbral de tasa de resolución; si no, S/0.
+  if (esBlipOnly(agenteSlug)) {
+    return <SeccionMetaLuz snapshot={snapshot} config={config} agenteSlug={agenteSlug} mes={mes} esMesActual={esMesActual} m={m} spec={spec} />;
+  }
+
   const meta = metricasMeta(agenteSlug, m);
   const baseSol = basePara(agenteSlug, config);
   const tramos1 = tramosP1Para(agenteSlug, config);
@@ -345,6 +352,151 @@ function SeccionMetas({
             ) : null
           }
         />
+      </div>
+    </section>
+  );
+}
+
+// ============================================================ META LUZ
+function SeccionMetaLuz({
+  snapshot, config, agenteSlug, mes, esMesActual, m, spec,
+}: {
+  snapshot: DataSnapshot; config: ComisionConfig; agenteSlug: AgenteSlug;
+  mes: MesKey; esMesActual: boolean;
+  m: ReturnType<typeof metricasAgente>;
+  spec: typeof AGENTES.fernanda;
+}) {
+  const luz = calcularComisionLuz(m.pctResolucion, config);
+
+  // Solucionadas adicionales necesarias para subir a 60% asumiendo
+  // que las contestadas no varíen
+  const contestadas = Math.max(0, m.cerradas - m.noContesta);
+  const necesariasParaUmbral = Math.ceil(contestadas * (luz.umbralPct / 100));
+  const faltanSolu = Math.max(0, necesariasParaUmbral - m.solucionadas);
+  const ppFaltantes = +(luz.umbralPct - m.pctResolucion).toFixed(1);
+
+  // Proyección a fin de mes
+  const proyec = useMemo(() => {
+    if (!esMesActual) return null;
+    const dias = diasTrabajados(snapshot, agenteSlug, mes);
+    const total = diasTotalesDelMes(mes);
+    if (dias <= 0) return null;
+    const cerProy = proyectarFinDeMes(m.cerradas, dias, total);
+    const noConProy = proyectarFinDeMes(m.noContesta, dias, total);
+    const soluProy = proyectarFinDeMes(m.solucionadas, dias, total);
+    const conProy = Math.max(0, cerProy - noConProy);
+    const pctProy = conProy > 0 ? +(soluProy / conProy * 100).toFixed(1) : 0;
+    const luzProy = calcularComisionLuz(pctProy, config);
+    return { soluProy, conProy, pctProy, luzProy };
+  }, [esMesActual, snapshot, agenteSlug, mes, m, config]);
+
+  return (
+    <section>
+      <h2 className="font-display text-[18px] font-semibold text-ink mb-4 flex items-center gap-2">
+        <span className="w-1 h-5 rounded-full" style={{ background: spec.color }} />
+        Tu meta {esMesActual ? 'este mes' : `de ${MES_LABEL[mes]}`}
+      </h2>
+
+      <div className="grid lg:grid-cols-3 gap-4">
+        {/* CARD 1: COMISIÓN */}
+        <div
+          className="card-surface p-6 text-white relative overflow-hidden lg:col-span-1"
+          style={{ background: 'linear-gradient(135deg, #151744 0%, #212469 100%)' }}
+        >
+          <p className="text-[10.5px] uppercase tracking-[0.14em] text-blue-200/80 mb-3">
+            {esMesActual ? 'Comisión proyectada · fin de mes' : 'Comisión del mes'}
+          </p>
+          <div className="font-display text-[44px] font-semibold tabular leading-none mb-3">
+            {formatSol(esMesActual && proyec ? proyec.luzProy.total : luz.total)}
+          </div>
+          <p className="text-[12px] text-blue-200/80 mb-4">
+            {esMesActual && proyec
+              ? <>Acumulado al día de hoy: <span className="font-semibold text-white tabular">{formatSol(luz.total)}</span></>
+              : 'Comisión total del mes'}
+          </p>
+
+          <div className="rounded-lg border border-blue-300/20 bg-white/5 px-4 py-3">
+            <div className="text-[10px] uppercase tracking-wider text-blue-200/80 mb-1">Regla</div>
+            <div className="text-[12px] leading-relaxed">
+              Si tu tasa de resolución llega al{' '}
+              <strong className="text-white">{luz.umbralPct}%</strong>, comisionas{' '}
+              <strong className="text-white">{formatSol(luz.bono)}</strong>.
+            </div>
+          </div>
+        </div>
+
+        {/* CARD 2: TASA DE RESOLUCIÓN — PROGRESO AL UMBRAL */}
+        <MetaProgress
+          eyebrow="Tasa de resolución · Tu única meta"
+          valorActual={m.pctResolucion}
+          decimales={1}
+          valorObjetivo={luz.cumple ? undefined : luz.umbralPct}
+          unidad="% sobre contestadas"
+          tramoActual={
+            luz.cumple
+              ? { label: `≥ ${luz.umbralPct}%`, recompensa: `Cobras ${formatSol(luz.bono)} este mes` }
+              : { label: `< ${luz.umbralPct}%`, recompensa: 'Aún no comisiona' }
+          }
+          tramoSiguiente={
+            luz.cumple
+              ? null
+              : { label: `${luz.umbralPct}%`, recompensa: `Comisionas ${formatSol(luz.bono)}` }
+          }
+          desafio={
+            !luz.cumple
+              ? {
+                  titulo: faltanSolu > 0
+                    ? `Necesitas ${faltanSolu} consultas solucionadas más`
+                    : `Te faltan ${ppFaltantes} pp para llegar al ${luz.umbralPct}%`,
+                  detalle: faltanSolu > 0
+                    ? `con tus ${nf(contestadas)} conversaciones contestadas actuales, para subir al ${luz.umbralPct}% y desbloquear los ${formatSol(luz.bono)} de comisión.`
+                    : `Sigue tipificando como solucionadas las consultas que resuelvas.`,
+                }
+              : null
+          }
+          progresoPct={Math.min(100, (m.pctResolucion / luz.umbralPct) * 100)}
+          color={spec.color}
+          colorSoft={spec.colorSoft}
+          tono="aqua"
+          footer={
+            esMesActual && proyec ? (
+              <>
+                Proyección al cierre:{' '}
+                <span className="font-semibold text-ink2 tabular">{proyec.pctProy.toFixed(1)}%</span>
+                {' '}({nf(proyec.soluProy)} solucionadas / {nf(proyec.conProy)} contestadas)
+                {proyec.luzProy.cumple && !luz.cumple && (
+                  <span className="text-aqua-700 font-semibold"> · llegarías a la meta</span>
+                )}
+              </>
+            ) : null
+          }
+        />
+
+        {/* CARD 3: NOTA DEL ESQUEMA */}
+        <div className="card-surface p-6 lg:col-span-1">
+          <p className="eyebrow mb-3">Cómo funciona</p>
+          <h3 className="font-display text-[18px] font-semibold text-ink mb-3 leading-tight">
+            Esquema todo o nada
+          </h3>
+          <ul className="space-y-3 text-[12.5px] text-ink2 leading-relaxed">
+            <li className="flex gap-2">
+              <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
+              <span>Tu único indicador es la <strong>tasa de resolución</strong>: consultas solucionadas dividido entre conversaciones contestadas.</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
+              <span>Si llegas al <strong>{luz.umbralPct}%</strong> al cierre del mes, comisionas <strong>{formatSol(luz.bono)}</strong> fijos.</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
+              <span>No hay escalones intermedios: por debajo del {luz.umbralPct}%, la comisión es <strong>{formatSol(0)}</strong>.</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
+              <span>Las atenciones, transferidas y consultas solucionadas son tu información operativa, no afectan la comisión directamente.</span>
+            </li>
+          </ul>
+        </div>
       </div>
     </section>
   );
