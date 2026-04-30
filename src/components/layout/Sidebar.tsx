@@ -59,7 +59,8 @@ function navForRol(rol: Rol): ItemBase[] {
         children: [
           { href: '/admin',                  label: 'Carga de datos' },
           { href: '/admin/comisiones',       label: 'Tramos generales' },
-          { href: '/admin/comisiones-luz',   label: 'Tramos Luz (SAE)' },
+          { href: '/admin/comisiones-luz',   label: 'Comisión de Luz' },
+          { href: '/admin/sae-tags',         label: 'Tipificaciones SAE' },
           { href: '/admin/usuarios',         label: 'Usuarios y accesos' },
         ],
       },

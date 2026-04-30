@@ -14,5 +14,5 @@ export default async function AdminPage() {
 
   const [snap, cfg, users] = await Promise.all([loadSnapshot(), loadConfig(), loadUsers()]);
   const usersPub = users.map(u => ({ username: u.username, rol: u.rol, display: u.display }));
-  return <AdminView snapshotMeta={snap?.meta ?? null} config={cfg} users={usersPub} vista="carga" />;
+  return <AdminView snapshotMeta={snap?.meta ?? null} snapshot={snap} config={cfg} users={usersPub} vista="carga" />;
 }

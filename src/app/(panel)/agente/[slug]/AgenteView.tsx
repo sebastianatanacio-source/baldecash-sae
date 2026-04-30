@@ -18,7 +18,7 @@ import {
 } from '@/lib/domain/comisiones';
 import {
   basePara, diasTotalesDelMes, diasTrabajados, fechaCorta, mesActual,
-  metricasAgente, metricasMeta, nf, pct, proyectarFinDeMes,
+  metricasAgente, metricasLuzEfectivas, metricasMeta, nf, pct, proyectarFinDeMes,
   solicitudesParaPct, tramosP1Para, tramosP2Para, ultimoDiaConDatos,
 } from '@/lib/domain/helpers';
 import type { AgenteSlug, ComisionConfig, DataSnapshot, MesKey } from '@/lib/domain/types';
@@ -101,7 +101,7 @@ export default function AgenteView({
         <div className="anim-fade-in-up anim-stagger-1">
           <SeccionDesempeno
             snapshot={snapshot} agenteSlug={agenteSlug} mes={mesSel}
-            spec={spec}
+            spec={spec} config={config}
           />
         </div>
       )}
@@ -366,29 +366,28 @@ function SeccionMetaLuz({
   m: ReturnType<typeof metricasAgente>;
   spec: typeof AGENTES.fernanda;
 }) {
-  const luz = calcularComisionLuz(m.pctResolucion, config);
+  // Recalculamos con el universo de tipificaciones que el admin haya
+  // definido, en lugar de tomar m.solucionadas directo del parser.
+  const ef = metricasLuzEfectivas(m, config);
+  const luz = calcularComisionLuz(ef.pctResolucion, config);
 
-  // Solucionadas adicionales necesarias para subir a 60% asumiendo
-  // que las contestadas no varíen
-  const contestadas = Math.max(0, m.cerradas - m.noContesta);
-  const necesariasParaUmbral = Math.ceil(contestadas * (luz.umbralPct / 100));
-  const faltanSolu = Math.max(0, necesariasParaUmbral - m.solucionadas);
-  const ppFaltantes = +(luz.umbralPct - m.pctResolucion).toFixed(1);
+  // Solucionadas adicionales necesarias para subir al umbral
+  const necesariasParaUmbral = Math.ceil(ef.contestadas * (luz.umbralPct / 100));
+  const faltanSolu = Math.max(0, necesariasParaUmbral - ef.solucionadas);
+  const ppFaltantes = +(luz.umbralPct - ef.pctResolucion).toFixed(1);
 
-  // Proyección a fin de mes
+  // Proyección a fin de mes (usa razón actual)
   const proyec = useMemo(() => {
     if (!esMesActual) return null;
     const dias = diasTrabajados(snapshot, agenteSlug, mes);
     const total = diasTotalesDelMes(mes);
     if (dias <= 0) return null;
-    const cerProy = proyectarFinDeMes(m.cerradas, dias, total);
-    const noConProy = proyectarFinDeMes(m.noContesta, dias, total);
-    const soluProy = proyectarFinDeMes(m.solucionadas, dias, total);
-    const conProy = Math.max(0, cerProy - noConProy);
+    const conProy = proyectarFinDeMes(ef.contestadas, dias, total);
+    const soluProy = proyectarFinDeMes(ef.solucionadas, dias, total);
     const pctProy = conProy > 0 ? +(soluProy / conProy * 100).toFixed(1) : 0;
     const luzProy = calcularComisionLuz(pctProy, config);
     return { soluProy, conProy, pctProy, luzProy };
-  }, [esMesActual, snapshot, agenteSlug, mes, m, config]);
+  }, [esMesActual, snapshot, agenteSlug, mes, ef, config]);
 
   return (
     <section>
@@ -409,11 +408,16 @@ function SeccionMetaLuz({
           <div className="font-display text-[44px] font-semibold tabular leading-none mb-3">
             {formatSol(esMesActual && proyec ? proyec.luzProy.total : luz.total)}
           </div>
-          <p className="text-[12px] text-blue-200/80 mb-4">
-            {esMesActual && proyec
-              ? <>Acumulado al día de hoy: <span className="font-semibold text-white tabular">{formatSol(luz.total)}</span></>
-              : 'Comisión total del mes'}
-          </p>
+          {esMesActual && proyec ? (
+            <div className="mb-5 rounded-lg border border-blue-300/20 bg-white/5 px-4 py-3">
+              <div className="text-[10.5px] uppercase tracking-[0.14em] text-blue-200/70 mb-1">Acumulado al día de hoy</div>
+              <div className="font-display text-[26px] font-semibold tabular leading-none">
+                {formatSol(luz.total)}
+              </div>
+            </div>
+          ) : (
+            <p className="text-[12px] text-blue-200/80 mb-4">Comisión total del mes</p>
+          )}
 
           <div className="rounded-lg border border-blue-300/20 bg-white/5 px-4 py-3">
             <div className="text-[10px] uppercase tracking-wider text-blue-200/80 mb-1">Regla</div>
@@ -428,7 +432,7 @@ function SeccionMetaLuz({
         {/* CARD 2: TASA DE RESOLUCIÓN — PROGRESO AL UMBRAL */}
         <MetaProgress
           eyebrow="Tasa de resolución · Tu única meta"
-          valorActual={m.pctResolucion}
+          valorActual={ef.pctResolucion}
           decimales={1}
           valorObjetivo={luz.cumple ? undefined : luz.umbralPct}
           unidad="% sobre contestadas"
@@ -449,12 +453,12 @@ function SeccionMetaLuz({
                     ? `Necesitas ${faltanSolu} consultas solucionadas más`
                     : `Te faltan ${ppFaltantes} pp para llegar al ${luz.umbralPct}%`,
                   detalle: faltanSolu > 0
-                    ? `con tus ${nf(contestadas)} conversaciones contestadas actuales, para subir al ${luz.umbralPct}% y desbloquear los ${formatSol(luz.bono)} de comisión.`
+                    ? `con tus ${nf(ef.contestadas)} conversaciones contestadas actuales, para subir al ${luz.umbralPct}% y desbloquear los ${formatSol(luz.bono)} de comisión.`
                     : `Sigue tipificando como solucionadas las consultas que resuelvas.`,
                 }
               : null
           }
-          progresoPct={Math.min(100, (m.pctResolucion / luz.umbralPct) * 100)}
+          progresoPct={Math.min(100, (ef.pctResolucion / luz.umbralPct) * 100)}
           color={spec.color}
           colorSoft={spec.colorSoft}
           tono="aqua"
@@ -528,10 +532,12 @@ function CardComisionHero({
         S/ {animado.toLocaleString('es-PE')}
       </div>
       {esMesActual && proyec ? (
-        <p className="text-[12px] text-blue-200/80 mb-4">
-          Acumulado al día de hoy:{' '}
-          <span className="font-semibold text-white tabular">S/ {acumulado.toLocaleString('es-PE')}</span>
-        </p>
+        <div className="mb-5 rounded-lg border border-blue-300/20 bg-white/5 px-4 py-3">
+          <div className="text-[10.5px] uppercase tracking-[0.14em] text-blue-200/70 mb-1">Acumulado al día de hoy</div>
+          <div className="font-display text-[26px] font-semibold tabular leading-none">
+            S/ {acumulado.toLocaleString('es-PE')}
+          </div>
+        </div>
       ) : mostrarVieja ? (
         <p className="text-[12px] text-blue-200/80 mb-4">
           Esquema antiguo de referencia: {formatSol(comVieja)}
@@ -673,10 +679,11 @@ function SeccionEsquema({
 
 // ============================================================ DESEMPEÑO
 function SeccionDesempeno({
-  snapshot, agenteSlug, mes, spec,
+  snapshot, agenteSlug, mes, spec, config,
 }: {
   snapshot: DataSnapshot; agenteSlug: AgenteSlug; mes: MesKey;
   spec: typeof AGENTES.fernanda;
+  config: ComisionConfig;
 }) {
   const m = metricasAgente(snapshot, agenteSlug, mes);
   const ag = snapshot.agentes[agenteSlug]!;
@@ -721,52 +728,55 @@ function SeccionDesempeno({
         </div>
       )}
 
-      {/* Resumen específico para Luz (SAE) — 4 KPIs ejecutivos del reporte original */}
-      {seccion === 'resumen' && esBlipOnly(spec.slug) && (
-        <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-            <Kpi
-              label="Atenciones totales"
-              value={nf(m.aten)}
-              accent="#4453A0"
-              size="lg"
-              hint={`${nf(m.cerradas)} cerradas · ${nf(m.transferidas)} transferidas`}
-            />
-            <Kpi
-              label="Consultas solucionadas"
-              value={nf(m.solucionadas)}
-              accent="#00A29B"
-              size="lg"
-              hint={`${pct(m.aten > 0 ? m.solucionadas / m.aten * 100 : 0, 1)} sobre el total`}
-            />
-            <Kpi
-              label="Tasa de resolución"
-              value={pct(m.pctResolucion, 1)}
-              accent={m.pctResolucion >= 60 ? '#00A29B' : '#D1A646'}
-              size="lg"
-              hint={`${m.pctResolucion >= 60 ? '✓ Pasa' : '✗ Falla'} guardrail · sobre contestadas`}
-            />
-            <Kpi
-              label="1ª respuesta · mediana"
-              value={nf(m.frtMedianaSeg, 0)}
-              unit="seg"
-              accent={m.frtMedianaSeg <= 30 ? '#00A29B' : '#D1A646'}
-              size="lg"
-              hint={`${m.frtMedianaSeg <= 30 ? '✓ Pasa' : '✗ Falla'} guardrail · ≤ 30 seg`}
-            />
-          </div>
-          <div className="bg-bg/40 border border-line rounded-xl p-4 grid grid-cols-2 lg:grid-cols-4 gap-3 text-[12px]">
-            <KpiCompact label="Cerradas por ti" value={nf(m.cerradas)} accent="#4453A0" />
-            <KpiCompact label="No contesta" value={nf(m.noContesta)} accent="#D1A646" />
-            <KpiCompact label="Transferidas" value={nf(m.transferidas)} accent="#6873D7" />
-            <KpiCompact
-              label="Contestadas"
-              value={nf(Math.max(0, m.cerradas - m.noContesta))}
-              accent="#36B7B3"
-            />
-          </div>
-        </>
-      )}
+      {/* Resumen específico para Luz (SAE) — KPIs con universo configurable */}
+      {seccion === 'resumen' && esBlipOnly(spec.slug) && (() => {
+        const ef = metricasLuzEfectivas(m, config);
+        const sol = ef.solucionadas;
+        const noC = ef.noContesta;
+        const cont = ef.contestadas;
+        const pctR = ef.pctResolucion;
+        return (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+              <Kpi
+                label="Atenciones totales"
+                value={nf(m.aten)}
+                accent="#4453A0"
+                size="lg"
+                hint={`${nf(m.cerradas)} cerradas · ${nf(m.transferidas)} transferidas`}
+              />
+              <Kpi
+                label="Consultas solucionadas"
+                value={nf(sol)}
+                accent="#00A29B"
+                size="lg"
+                hint={`${pct(m.aten > 0 ? sol / m.aten * 100 : 0, 1)} sobre el total`}
+              />
+              <Kpi
+                label="Tasa de resolución"
+                value={pct(pctR, 1)}
+                accent={pctR >= 60 ? '#00A29B' : '#D1A646'}
+                size="lg"
+                hint={`${pctR >= 60 ? '✓ Pasa' : '✗ Falla'} guardrail · sobre contestadas`}
+              />
+              <Kpi
+                label="1ª respuesta · mediana"
+                value={nf(m.frtMedianaSeg, 0)}
+                unit="seg"
+                accent={m.frtMedianaSeg <= 30 ? '#00A29B' : '#D1A646'}
+                size="lg"
+                hint={`${m.frtMedianaSeg <= 30 ? '✓ Pasa' : '✗ Falla'} guardrail · ≤ 30 seg`}
+              />
+            </div>
+            <div className="bg-bg/40 border border-line rounded-xl p-4 grid grid-cols-2 lg:grid-cols-4 gap-3 text-[12px]">
+              <KpiCompact label="Cerradas por ti" value={nf(m.cerradas)} accent="#4453A0" />
+              <KpiCompact label="No contesta" value={nf(noC)} accent="#D1A646" />
+              <KpiCompact label="Transferidas" value={nf(m.transferidas)} accent="#6873D7" />
+              <KpiCompact label="Contestadas" value={nf(cont)} accent="#36B7B3" />
+            </div>
+          </>
+        );
+      })()}
 
       {seccion === 'atenciones' && (
         <Card>

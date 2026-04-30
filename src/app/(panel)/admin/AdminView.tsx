@@ -4,13 +4,17 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Pill } from '@/components/ui/Chips';
-import { fechaCorta, nf } from '@/lib/domain/helpers';
+import {
+  fechaCorta, nf, TAGS_SOLUCIONADAS_DEFAULT, TAGS_NO_CONTESTA_DEFAULT,
+} from '@/lib/domain/helpers';
 import { buildSnapshot } from '@/lib/parser';
-import type { ComisionConfig, SnapshotMeta } from '@/lib/domain/types';
+import { normalizar } from '@/lib/parser/blip';
+import { AGENTES } from '@/lib/domain/agentes';
+import type { ComisionConfig, DataSnapshot, SnapshotMeta } from '@/lib/domain/types';
 
 interface UserPub { username: 'admin' | 'jefa' | 'fernanda' | 'stefania' | 'julio' | 'luz'; rol: string; display: string }
 
-export type AdminVista = 'carga' | 'comisiones' | 'comisiones-luz' | 'usuarios';
+export type AdminVista = 'carga' | 'comisiones' | 'comisiones-luz' | 'sae-tags' | 'usuarios';
 
 const TITULOS: Record<AdminVista, { eyebrow: string; title: string; subtitle: string }> = {
   'carga': {
@@ -25,8 +29,13 @@ const TITULOS: Record<AdminVista, { eyebrow: string; title: string; subtitle: st
   },
   'comisiones-luz': {
     eyebrow: 'Esquema SAE',
-    title: 'Tramos específicos de Luz',
-    subtitle: 'Pilar 1: consultas solucionadas (universo unificado, meta 1,100/mes). Pilar 2: guardrail de calidad (% resolución).',
+    title: 'Comisión de Luz',
+    subtitle: 'Esquema todo-o-nada: si su tasa de resolución alcanza el umbral, comisiona el bono fijo.',
+  },
+  'sae-tags': {
+    eyebrow: 'Universo SAE',
+    title: 'Tipificaciones que cuentan',
+    subtitle: 'Marca qué tipificaciones de Luz suman como "solucionada" y cuáles restan del denominador "contestadas". Los cambios se aplican al instante.',
   },
   'usuarios': {
     eyebrow: 'Cuentas',
@@ -36,9 +45,10 @@ const TITULOS: Record<AdminVista, { eyebrow: string; title: string; subtitle: st
 };
 
 export default function AdminView({
-  snapshotMeta, config, users, vista = 'carga',
+  snapshotMeta, snapshot, config, users, vista = 'carga',
 }: {
   snapshotMeta: SnapshotMeta | null;
+  snapshot: DataSnapshot | null;
   config: ComisionConfig;
   users: UserPub[];
   vista?: AdminVista;
@@ -57,6 +67,7 @@ export default function AdminView({
       {vista === 'carga'         && <UploadCard meta={snapshotMeta} />}
       {vista === 'comisiones'    && <ConfigCard config={config} />}
       {vista === 'comisiones-luz'&& <ConfigLuzCard config={config} />}
+      {vista === 'sae-tags'      && <SaeTagsCard config={config} snapshot={snapshot} />}
       {vista === 'usuarios'      && <UsersCard usuarios={users} />}
     </div>
   );
@@ -504,6 +515,239 @@ function ConfigLuzCard({ config: initial }: { config: ComisionConfig }) {
         <button onClick={save} disabled={saving} className="btn-primary">
           {saving ? 'Guardando…' : 'Guardar regla de Luz'}
         </button>
+      </div>
+    </Card>
+  );
+}
+
+// ============================================================ SAE TAGS
+function SaeTagsCard({
+  config: initial, snapshot,
+}: { config: ComisionConfig; snapshot: DataSnapshot | null }) {
+  const router = useRouter();
+
+  // Reúne todas las tipificaciones únicas de Luz a través de los meses
+  // disponibles, con su conteo total. Si Luz aún no tiene datos, lista vacía.
+  const tipificacionesLuz: Array<{ tag: string; n: number; norm: string }> = (() => {
+    if (!snapshot) return [];
+    const ag = snapshot.agentes.luz;
+    if (!ag) return [];
+    const acc = new Map<string, { tag: string; n: number }>();
+    for (const m of Object.values(ag.meses)) {
+      if (!m) continue;
+      for (const t of m.tags) {
+        const norm = normalizar(t.tag);
+        const prev = acc.get(norm);
+        if (prev) {
+          prev.n += t.n;
+        } else {
+          acc.set(norm, { tag: t.tag, n: t.n });
+        }
+      }
+    }
+    const arr: Array<{ tag: string; n: number; norm: string }> = [];
+    for (const [norm, v] of acc.entries()) {
+      arr.push({ tag: v.tag, n: v.n, norm });
+    }
+    arr.sort((a, b) => b.n - a.n);
+    return arr;
+  })();
+
+  // Set "solucionadas" actuales (con default si no hay config)
+  const [setSolu, setSetSolu] = useState<Set<string>>(
+    new Set(initial.tagsLuzSolucionadas ?? TAGS_SOLUCIONADAS_DEFAULT),
+  );
+  const [setNo, setSetNo] = useState<Set<string>>(
+    new Set(initial.tagsLuzNoContesta ?? TAGS_NO_CONTESTA_DEFAULT),
+  );
+  const [incluyeTransf, setIncluyeTransf] = useState<boolean>(
+    initial.incluirTransferenciasLuz ?? false,
+  );
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Tipificaciones que estaban en defaults pero NO aparecen en los datos:
+  // útil para que el admin pueda marcarlas/desmarcarlas anticipadamente.
+  const tagsConocidas = new Set(tipificacionesLuz.map(t => t.norm));
+  const tagsExtra: Array<{ tag: string; n: number; norm: string }> = [
+    ...TAGS_SOLUCIONADAS_DEFAULT,
+    ...TAGS_NO_CONTESTA_DEFAULT,
+  ].filter(t => !tagsConocidas.has(t)).map(t => ({ tag: t, n: 0, norm: t }));
+  const todasLasTipif = [...tipificacionesLuz, ...tagsExtra];
+
+  function toggleSolu(norm: string) {
+    setSetSolu(prev => {
+      const nx = new Set(prev);
+      if (nx.has(norm)) nx.delete(norm); else nx.add(norm);
+      return nx;
+    });
+  }
+  function toggleNo(norm: string) {
+    setSetNo(prev => {
+      const nx = new Set(prev);
+      if (nx.has(norm)) nx.delete(norm); else nx.add(norm);
+      return nx;
+    });
+  }
+
+  async function save() {
+    setSaving(true); setError(null);
+    try {
+      const next: ComisionConfig = {
+        ...initial,
+        tagsLuzSolucionadas: [...setSolu],
+        tagsLuzNoContesta: [...setNo],
+        incluirTransferenciasLuz: incluyeTransf,
+      };
+      const r = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: next }),
+      });
+      const data = await r.json();
+      if (!r.ok) { setError(data.error ?? 'Error al guardar.'); return; }
+      setSavedAt(Date.now());
+      router.refresh();
+    } catch (e: any) {
+      setError(e?.message ?? 'No se pudo contactar al servidor.');
+    } finally { setSaving(false); }
+  }
+
+  function resetMayo() {
+    // Plantilla del esquema vigente desde mayo: quitar del universo
+    // las tipificaciones marcadas para excluir
+    const aQuitar = new Set([
+      'no contesta mensaje del asesor',
+      'ticket cerrado por inactividad',
+      'no quiere que lo vuelvan a contactar',
+      'numero de empresa',
+    ]);
+    setSetNo(prev => {
+      const nx = new Set(prev);
+      aQuitar.forEach(t => nx.delete(t));
+      return nx;
+    });
+    setIncluyeTransf(false);
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        eyebrow="Universo de tipificaciones"
+        title="Configura qué cuenta como solucionada y qué no"
+        subtitle="Marca cada tipificación según si suma como 'solucionada' (numerador) o resta como 'no contesta' (denominador)."
+      />
+
+      <div className="bg-aqua-100 border border-aqua-300 rounded-xl p-4 mb-5 text-[12.5px] text-aqua-700 leading-relaxed flex items-start gap-3">
+        <div className="font-bold text-aqua-700 shrink-0">i</div>
+        <div>
+          <p className="mb-1.5">
+            <strong>Tasa de resolución</strong> = solucionadas (✓ verde) ÷ contestadas. Donde "contestadas" = cerradas − no-contesta (✗ ámbar). Las tipificaciones sin marca son neutras: cuentan como cerradas pero no suman al numerador.
+          </p>
+          <p>
+            Vigente desde mayo el equipo plantea quitar del universo: <em>no contesta mensaje del asesor</em>, <em>ticket cerrado por inactividad</em>, <em>no quiere que lo vuelvan a contactar</em>, <em>número de empresa</em>. Click en <strong>"Aplicar plantilla mayo"</strong> abajo para preconfigurar.
+          </p>
+        </div>
+      </div>
+
+      {/* Toggle de transferencias */}
+      <div className="bg-bg/60 border border-line rounded-xl p-4 mb-5 flex items-center gap-4">
+        <div className="flex-1">
+          <div className="text-[13px] font-semibold text-ink">Incluir transferencias en cerradas</div>
+          <div className="text-[11.5px] text-muted">
+            Por defecto las atenciones que se transfieren a otra cola NO entran al universo. Activa esto si decides incluirlas.
+          </div>
+        </div>
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            checked={incluyeTransf}
+            onChange={e => setIncluyeTransf(e.target.checked)}
+            className="sr-only peer"
+          />
+          <div className="w-11 h-6 bg-line2 rounded-full peer peer-checked:bg-aqua-600 transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-transform peer-checked:after:translate-x-5" />
+        </label>
+      </div>
+
+      {/* Tabla de tipificaciones */}
+      <div className="border border-line rounded-xl overflow-hidden">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="bg-bg/60">
+              <th className="px-4 py-3 text-left text-[10.5px] font-semibold uppercase tracking-wider text-muted">Tipificación</th>
+              <th className="px-3 py-3 text-right text-[10.5px] font-semibold uppercase tracking-wider text-muted">Chats</th>
+              <th className="px-3 py-3 text-center text-[10.5px] font-semibold uppercase tracking-wider text-aqua-700">✓ Solucionada</th>
+              <th className="px-3 py-3 text-center text-[10.5px] font-semibold uppercase tracking-wider text-gold-700">✗ No contesta</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {todasLasTipif.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-muted2 text-[12.5px]">
+                  Aún no hay tipificaciones registradas para Luz. Sube un CSV con datos de Luz para que aparezcan aquí.
+                </td>
+              </tr>
+            )}
+            {todasLasTipif.map(t => {
+              const esSolu = setSolu.has(t.norm);
+              const esNo = setNo.has(t.norm);
+              const isDefault = TAGS_SOLUCIONADAS_DEFAULT.includes(t.norm) || TAGS_NO_CONTESTA_DEFAULT.includes(t.norm);
+              return (
+                <tr key={t.norm} className="hover:bg-bg/40">
+                  <td className="px-4 py-3">
+                    <div className="text-[13px] text-ink2 font-medium">{t.tag}</div>
+                    <div className="text-[10.5px] text-muted2 mt-0.5">
+                      {isDefault && <span className="mr-1.5">por defecto · </span>}
+                      <code className="font-mono text-[10px]">{t.norm}</code>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 text-right tabular text-ink2 font-semibold">
+                    {t.n > 0 ? nf(t.n) : <span className="text-muted2">—</span>}
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    <input
+                      type="checkbox"
+                      checked={esSolu}
+                      onChange={() => toggleSolu(t.norm)}
+                      className="w-4 h-4 rounded border-line2 accent-aqua-600 cursor-pointer"
+                    />
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    <input
+                      type="checkbox"
+                      checked={esNo}
+                      onChange={() => toggleNo(t.norm)}
+                      className="w-4 h-4 rounded border-line2 accent-gold-500 cursor-pointer"
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {error && (
+        <div className="mt-4 text-[13px] text-gold-700 bg-gold-100 border border-gold-300 rounded-lg px-4 py-3">
+          {error}
+        </div>
+      )}
+
+      <div className="mt-5 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={resetMayo}
+          className="btn-ghost text-[12px]"
+        >
+          Aplicar plantilla mayo
+        </button>
+        <div className="flex items-center gap-3">
+          {savedAt && <span className="text-[12px] text-aqua-700">Universo guardado</span>}
+          <button onClick={save} disabled={saving} className="btn-primary">
+            {saving ? 'Guardando…' : 'Guardar configuración'}
+          </button>
+        </div>
       </div>
     </Card>
   );

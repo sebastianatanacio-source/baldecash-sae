@@ -146,6 +146,26 @@ export interface ComisionConfig {
     bono: number;
   };
 
+  /**
+   * Universo de tipificaciones que cuentan como "solucionadas" para Luz.
+   * Si está omitido, se usa el set por defecto (las 14 del reporte SAE).
+   * Los tags se guardan con normalización aplicada (lowercase, sin acentos).
+   */
+  tagsLuzSolucionadas?: string[];
+
+  /**
+   * Tipificaciones que cuentan como "no contesta" (se restan del denominador
+   * de contestadas). Si está omitido, se usa el set por defecto.
+   */
+  tagsLuzNoContesta?: string[];
+
+  /**
+   * Si está en true, las atenciones transferidas SE INCLUYEN como
+   * cerradas (denominador). Por defecto false: las transferencias
+   * quedan fuera del universo (regla actual del reporte SAE).
+   */
+  incluirTransferenciasLuz?: boolean;
+
   /** @deprecated Se reemplazó por luzEsquema */
   pilarLuz1?: TramoP1[];
   /** @deprecated Se reemplazó por luzEsquema */

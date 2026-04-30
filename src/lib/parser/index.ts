@@ -80,10 +80,11 @@ export async function buildSnapshot(input: BuildSnapshotInput): Promise<BuildSna
       const frtMedianaSeg = b && b.frtSegs.length > 0 ? +mediana(b.frtSegs).toFixed(1) : 0;
 
       const canales = b?.canales ?? { whatsapp: 0, facebook: 0, otro: 0 };
+      // Guardamos TODAS las tipificaciones (no solo top 8) para que el panel
+      // admin pueda mostrar la lista completa con conteos por mes.
       const tags = b
         ? [...b.tags.entries()]
             .sort((x, y) => y[1] - x[1])
-            .slice(0, 8)
             .map(([tag, n]) => ({ tag, n }))
         : [];
 

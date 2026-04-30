@@ -66,7 +66,7 @@ export function combinarMetricas(metricas: MetricasMes[]): MetricasMes {
   // % Resolución sobre contestadas (cerradas - noContesta)
   const contestadas = Math.max(0, out.cerradas - out.noContesta);
   out.pctResolucion = contestadas > 0 ? +(out.solucionadas / contestadas * 100).toFixed(1) : 0;
-  out.tags = [...tagAcc.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([tag, n]) => ({ tag, n }));
+  out.tags = [...tagAcc.entries()].sort((a, b) => b[1] - a[1]).map(([tag, n]) => ({ tag, n }));
   return out;
 }
 
@@ -200,6 +200,87 @@ export function metricasMeta(slug: AgenteSlug, m: MetricasMes): {
     pilar2Numerador: m.sol,
     pilar2Denominador: m.aten,
     pilar2NumeradorLabel: 'solicitudes',
+  };
+}
+
+// ============================================================
+// Universo SAE configurable por admin (tipificaciones de Luz)
+// ============================================================
+
+import { normalizar } from '@/lib/parser/blip';
+
+/** Set por defecto — debe coincidir con TAGS_SOLUCIONADAS del parser. */
+export const TAGS_SOLUCIONADAS_DEFAULT = [
+  'consulta solucionada',
+  'desbloqueo de equipos',
+  'derivado a otra area',
+  'desbloqueo equipos',
+  'desbloqueo celular',
+  'consultas zona estudiante',
+  'consultas admin',
+  'derivado a soporte t.',
+  'derivado a cobranzas',
+  'consultas logistica',
+  'quejas/reclamos',
+  'derivado a soporte tecnico',
+  'desbloqueo equipo',
+  'desbloqueo cel.',
+];
+
+export const TAGS_NO_CONTESTA_DEFAULT = [
+  'no contesta',
+  'no contesta mensaje del asesor',
+  'cliente no contesta',
+  'consulta no respondida',
+  'ticket cerrado por inactividad',
+  'no es estudiante',
+  'no quiere que lo vuelvan a contactar',
+  'numero de empresa',
+];
+
+export interface MetricasLuzEfectivas {
+  solucionadas: number;
+  cerradas: number;
+  noContesta: number;
+  contestadas: number;
+  pctResolucion: number;
+  setSolucionadas: Set<string>;
+  setNoContesta: Set<string>;
+  incluyeTransferencias: boolean;
+}
+
+/**
+ * Recalcula las métricas de Luz aplicando la configuración del admin
+ * (override del universo de tipificaciones y manejo de transferencias).
+ *
+ * Reclasifica los tags presentes en m.tags contra los sets configurables.
+ */
+export function metricasLuzEfectivas(
+  m: { tags: Array<{ tag: string; n: number }>; cerradas: number; transferidas: number },
+  cfg: import('./types').ComisionConfig,
+): MetricasLuzEfectivas {
+  const setSolu = new Set(cfg.tagsLuzSolucionadas ?? TAGS_SOLUCIONADAS_DEFAULT);
+  const setNo = new Set(cfg.tagsLuzNoContesta ?? TAGS_NO_CONTESTA_DEFAULT);
+  const incluyeTransferencias = cfg.incluirTransferenciasLuz ?? false;
+
+  let solucionadas = 0;
+  let noContesta = 0;
+  for (const t of m.tags) {
+    const n = normalizar(t.tag);
+    if (setSolu.has(n)) solucionadas += t.n;
+    if (setNo.has(n))   noContesta   += t.n;
+  }
+
+  // Por defecto las transferencias quedan fuera del universo (regla SAE).
+  // Si el admin elige incluirlas, se suman a cerradas.
+  const cerradas = incluyeTransferencias ? m.cerradas + m.transferidas : m.cerradas;
+  const contestadas = Math.max(0, cerradas - noContesta);
+  const pctResolucion = contestadas > 0 ? +(solucionadas / contestadas * 100).toFixed(1) : 0;
+
+  return {
+    solucionadas, cerradas, noContesta, contestadas, pctResolucion,
+    setSolucionadas: setSolu, setNoContesta: setNo,
+    incluyeTransferencias,
   };
 }
 

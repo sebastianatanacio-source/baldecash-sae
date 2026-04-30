@@ -91,7 +91,7 @@ const TAGS_NO_CONTESTA = new Set<string>([
  * espacios colapsados. Conserva puntuación significativa (`.` y `/`)
  * que aparece en tags como "Derivado a Soporte T." y "Quejas/Reclamos".
  */
-function normalizar(tag: string): string {
+export function normalizar(tag: string): string {
   return tag
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '') // quita diacríticos (combining marks)
