@@ -1,0 +1,148 @@
+// Utilidades comunes para combinar métricas y formatear
+
+import type { DataSnapshot, MesKey, MetricasMes } from './types';
+
+export function nf(n: number, decimals = 0): string {
+  return new Intl.NumberFormat('es-PE', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(n);
+}
+
+export function pct(n: number, decimals = 1): string {
+  return `${nf(n, decimals)}%`;
+}
+
+const VACIO: MetricasMes = {
+  aten: 0, deja: 0, pctDeja: 0,
+  sol: 0, aeCup: 0, aePre: 0, aeTot: 0, pctSol: 0,
+  qtAvg: 0, frtAvg: 0, artAvg: 0,
+  canales: { whatsapp: 0, facebook: 0, otro: 0 },
+  tags: [],
+};
+
+/** Suma simple por clave numérica */
+function add<T extends Record<string, any>>(acc: T, m: T, keys: (keyof T)[]) {
+  for (const k of keys) (acc as any)[k] = (acc[k] ?? 0) + (m[k] ?? 0);
+}
+
+/** Combina N métricas mensuales en una sola consolidada (con %s recalculados) */
+export function combinarMetricas(metricas: MetricasMes[]): MetricasMes {
+  if (metricas.length === 0) return { ...VACIO, canales: { ...VACIO.canales }, tags: [] };
+  if (metricas.length === 1) return metricas[0];
+
+  const out: MetricasMes = {
+    ...VACIO,
+    canales: { whatsapp: 0, facebook: 0, otro: 0 },
+    tags: [],
+  };
+  const tagAcc = new Map<string, number>();
+  let qtSumW = 0, qtN = 0;
+  let frtSumW = 0, frtN = 0;
+  let artSumW = 0, artN = 0;
+
+  for (const m of metricas) {
+    add(out, m, ['aten', 'deja', 'sol', 'aeCup', 'aePre', 'aeTot']);
+    out.canales.whatsapp += m.canales.whatsapp;
+    out.canales.facebook += m.canales.facebook;
+    out.canales.otro     += m.canales.otro;
+    for (const t of m.tags) tagAcc.set(t.tag, (tagAcc.get(t.tag) ?? 0) + t.n);
+    // promedios ponderados por # atenciones (no perfecto pero razonable cuando no tenemos sumas crudas por cada celda)
+    if (m.qtAvg > 0)  { qtSumW  += m.qtAvg  * m.aten; qtN  += m.aten; }
+    if (m.frtAvg > 0) { frtSumW += m.frtAvg * m.aten; frtN += m.aten; }
+    if (m.artAvg > 0) { artSumW += m.artAvg * m.aten; artN += m.aten; }
+  }
+  out.pctDeja = out.aten > 0 ? +(out.deja / out.aten * 100).toFixed(1) : 0;
+  out.pctSol  = out.aten > 0 ? +(out.sol  / out.aten * 100).toFixed(1) : 0;
+  out.qtAvg  = qtN  > 0 ? +(qtSumW  / qtN ).toFixed(2) : 0;
+  out.frtAvg = frtN > 0 ? +(frtSumW / frtN).toFixed(2) : 0;
+  out.artAvg = artN > 0 ? +(artSumW / artN).toFixed(2) : 0;
+  out.tags = [...tagAcc.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([tag, n]) => ({ tag, n }));
+  return out;
+}
+
+/** Devuelve la métrica de un agente para un mes específico, o totalizada si mes='all' */
+export function metricasAgente(snap: DataSnapshot, slug: string, mes: MesKey | 'all'): MetricasMes {
+  const ag = snap.agentes[slug as keyof typeof snap.agentes];
+  if (!ag) return { ...VACIO, canales: { ...VACIO.canales }, tags: [] };
+  if (mes === 'all') {
+    const arr = Object.values(ag.meses).filter(Boolean) as MetricasMes[];
+    return combinarMetricas(arr);
+  }
+  return ag.meses[mes] ?? { ...VACIO, canales: { ...VACIO.canales }, tags: [] };
+}
+
+/** Métrica consolidada del equipo entero por mes */
+export function metricasEquipo(snap: DataSnapshot, mes: MesKey | 'all'): MetricasMes {
+  const arr: MetricasMes[] = [];
+  for (const ag of Object.values(snap.agentes)) {
+    if (!ag) continue;
+    if (mes === 'all') {
+      for (const m of Object.values(ag.meses)) if (m) arr.push(m);
+    } else if (ag.meses[mes]) {
+      arr.push(ag.meses[mes]!);
+    }
+  }
+  return combinarMetricas(arr);
+}
+
+/** Mes más reciente con datos (o null si no hay). */
+export function mesActual(snap: DataSnapshot): MesKey | null {
+  return snap.meta.meses.length > 0 ? snap.meta.meses[snap.meta.meses.length - 1] : null;
+}
+
+/** Días totales del mes (para 2026, fijo). */
+const DIAS_MES_2026: Record<string, number> = {
+  ene: 31, feb: 28, mar: 31, abr: 30, may: 31, jun: 30,
+  jul: 31, ago: 31, sep: 30, oct: 31, nov: 30, dic: 31,
+};
+export function diasTotalesDelMes(mes: MesKey): number {
+  return DIAS_MES_2026[mes] ?? 30;
+}
+
+/** Días con actividad real (atenciones > 0) registrados en el mes. */
+export function diasTrabajados(snap: DataSnapshot, slug: string, mes: MesKey): number {
+  const ag = snap.agentes[slug as keyof typeof snap.agentes];
+  if (!ag) return 0;
+  const dia = ag.diario[mes] ?? [];
+  return dia.filter(d => d.aten > 0).length;
+}
+
+/** Último día con datos en el mes (formato DD-MM). */
+export function ultimoDiaConDatos(snap: DataSnapshot, slug: string, mes: MesKey): string | null {
+  const ag = snap.agentes[slug as keyof typeof snap.agentes];
+  if (!ag) return null;
+  const dia = ag.diario[mes] ?? [];
+  const concant = dia.filter(d => d.aten > 0 || d.ae > 0 || d.deja > 0);
+  return concant.length > 0 ? concant[concant.length - 1].day : null;
+}
+
+/** Proyección lineal a fin de mes basada en ritmo actual. */
+export function proyectarFinDeMes(
+  actual: number, diasUsados: number, diasTotales: number,
+): number {
+  if (diasUsados <= 0) return 0;
+  return Math.round((actual / diasUsados) * diasTotales);
+}
+
+/**
+ * Solicitudes adicionales que se necesitan para alcanzar un porcentaje
+ * objetivo de Sol/Aten, manteniendo las atenciones constantes.
+ *
+ *   pctObjetivo = (sol + N) / aten · 100
+ *   N = ceil(pctObjetivo · aten / 100) - sol
+ */
+export function solicitudesParaPct(solActual: number, atenActual: number, pctObjetivo: number): number {
+  if (atenActual <= 0) return 0;
+  const necesarias = Math.ceil((pctObjetivo / 100) * atenActual);
+  return Math.max(0, necesarias - solActual);
+}
+
+/** Etiqueta corta de fecha de actualización */
+export function fechaCorta(iso?: string): string {
+  if (!iso) return '—';
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return '—';
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return `${dt.getDate()} ${meses[dt.getMonth()]} ${dt.getFullYear()}`;
+}
