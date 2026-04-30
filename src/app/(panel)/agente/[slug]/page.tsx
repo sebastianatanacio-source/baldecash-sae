@@ -1,52 +1,12 @@
-import { notFound, redirect } from 'next/navigation';
-import { getSession } from '@/lib/auth/session';
-import { puedeVerAgente } from '@/lib/auth/users';
-import { loadSnapshot } from '@/lib/storage/snapshot';
-import { loadConfig } from '@/lib/storage/config';
-import { AGENTES } from '@/lib/domain/agentes';
-import { EmptyState } from '@/components/ui/EmptyState';
 import AgenteView from './AgenteView';
-import type { AgenteSlug } from '@/lib/domain/types';
+import { loadAgenteContext } from './loader';
+import { EmptyAgente } from './EmptyAgente';
 
-// Esta ruta depende de cookies de sesión + lectura del snapshot persistido,
-// nunca puede prerenderizarse estáticamente.
 export const dynamic = 'force-dynamic';
 
-const VALIDOS: AgenteSlug[] = ['fernanda', 'stefania', 'julio', 'luz'];
-
-export default async function AgentePage({
-  params,
-}: { params: Promise<{ slug: string }> }) {
-  const session = await getSession();
-  if (!session.rol) redirect('/login');
+export default async function AgentePanelPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  if (!VALIDOS.includes(slug as AgenteSlug)) notFound();
-  if (!puedeVerAgente(session.rol, slug as 'fernanda' | 'stefania' | 'julio' | 'luz')) {
-    redirect('/resumen');
-  }
-
-  const [snap, cfg] = await Promise.all([loadSnapshot(), loadConfig()]);
-  const spec = AGENTES[slug as AgenteSlug];
-
-  if (!snap) {
-    return (
-      <EmptyState
-        title={`Aún no hay información para ${spec.nombre}`}
-        description="El reporte se activará cuando el administrador cargue los archivos de Blip y Admin."
-        actionHref={session.rol === 'admin' ? '/admin' : undefined}
-        actionLabel={session.rol === 'admin' ? 'Ir al panel de carga' : undefined}
-      />
-    );
-  }
-
-  if (!snap.agentes[spec.slug]) {
-    return (
-      <EmptyState
-        title={`Sin datos de ${spec.nombre} en este período`}
-        description={`Los archivos cargados no contienen registros atribuibles a ${spec.nombre}. Verifica el nombre en Blip y el cupón ${spec.cupon || 'configurado'} en Admin.`}
-      />
-    );
-  }
-
-  return <AgenteView snapshot={snap} config={cfg} agenteSlug={spec.slug} />;
+  const ctx = await loadAgenteContext(slug);
+  if (!ctx.ok) return <EmptyAgente slug={ctx.slug} reason={ctx.reason} rolPuedeCargar={ctx.rolPuedeCargar} />;
+  return <AgenteView snapshot={ctx.snapshot} config={ctx.config} agenteSlug={ctx.slug} vista="panel" />;
 }

@@ -24,16 +24,23 @@ import {
 import type { AgenteSlug, ComisionConfig, DataSnapshot, MesKey } from '@/lib/domain/types';
 
 type Seccion = 'resumen' | 'atenciones' | 'solicitudes' | 'canales' | 'horarios';
+export type AgenteVista = 'panel' | 'metas' | 'rendimiento' | 'historico';
 
 export default function AgenteView({
-  snapshot, config, agenteSlug,
-}: { snapshot: DataSnapshot; config: ComisionConfig; agenteSlug: AgenteSlug }) {
+  snapshot, config, agenteSlug, vista = 'panel',
+}: {
+  snapshot: DataSnapshot;
+  config: ComisionConfig;
+  agenteSlug: AgenteSlug;
+  vista?: AgenteVista;
+}) {
   const spec = AGENTES[agenteSlug];
   const ag = snapshot.agentes[agenteSlug]!;
   const mesesDisponibles = snapshot.meta.meses.filter(m => ag.meses[m]);
   const mesPorDefecto = mesActual(snapshot) ?? mesesDisponibles[mesesDisponibles.length - 1];
 
   const [mesSel, setMesSel] = useState<MesKey>(mesPorDefecto);
+  const esMesActual = mesSel === mesPorDefecto;
 
   return (
     <div className="space-y-7">
@@ -45,45 +52,70 @@ export default function AgenteView({
           mesActualReal={mesPorDefecto}
           onChangeMes={setMesSel}
           mesesDisponibles={mesesDisponibles}
+          vista={vista}
         />
       </div>
 
-      <div className="anim-fade-in-up anim-stagger-1">
-        <SeccionMetas
-          snapshot={snapshot} config={config}
-          agenteSlug={agenteSlug} mes={mesSel}
-          esMesActual={mesSel === mesPorDefecto}
-        />
-      </div>
+      {/* MI PANEL: jornada del día + KPIs hero (sin metas detalladas) */}
+      {vista === 'panel' && (
+        <>
+          {esMesActual && (
+            <div className="anim-fade-in-up anim-stagger-1">
+              <SeccionHoy snapshot={snapshot} agenteSlug={agenteSlug} mes={mesSel} color={spec.color} blipOnly={esBlipOnly(agenteSlug)} />
+            </div>
+          )}
+          <div className="anim-fade-in-up anim-stagger-2">
+            <SeccionMetas
+              snapshot={snapshot} config={config}
+              agenteSlug={agenteSlug} mes={mesSel}
+              esMesActual={esMesActual}
+            />
+          </div>
+        </>
+      )}
 
-      {mesSel === mesPorDefecto && (
-        <div className="anim-fade-in-up anim-stagger-2">
-          <SeccionHoy snapshot={snapshot} agenteSlug={agenteSlug} mes={mesSel} color={spec.color} blipOnly={esBlipOnly(agenteSlug)} />
+      {/* MIS METAS: pilares completos + esquema visible */}
+      {vista === 'metas' && (
+        <>
+          <div className="anim-fade-in-up anim-stagger-1">
+            <SeccionMetas
+              snapshot={snapshot} config={config}
+              agenteSlug={agenteSlug} mes={mesSel}
+              esMesActual={esMesActual}
+            />
+          </div>
+          <div className="anim-fade-in-up anim-stagger-2">
+            <SeccionEsquema
+              config={config}
+              agenteSlug={agenteSlug}
+              mes={mesSel}
+              snapshot={snapshot}
+              color={spec.color}
+            />
+          </div>
+        </>
+      )}
+
+      {/* MI RENDIMIENTO: desempeño operativo (atenciones, canales, horarios, tipif) */}
+      {vista === 'rendimiento' && (
+        <div className="anim-fade-in-up anim-stagger-1">
+          <SeccionDesempeno
+            snapshot={snapshot} agenteSlug={agenteSlug} mes={mesSel}
+            spec={spec}
+          />
         </div>
       )}
 
-      <div className="anim-fade-in-up anim-stagger-3">
-        <SeccionEsquema
-          config={config}
-          agenteSlug={agenteSlug}
-          mes={mesSel}
-          snapshot={snapshot}
-          color={spec.color}
-        />
-      </div>
-
-      <div className="anim-fade-in-up anim-stagger-4">
-        <SeccionDesempeno
-          snapshot={snapshot} agenteSlug={agenteSlug} mes={mesSel}
-          spec={spec}
-        />
-      </div>
-
-      <SeccionHistorico
-        snapshot={snapshot} agenteSlug={agenteSlug}
-        mesesDisponibles={mesesDisponibles} color={spec.color}
-        config={config}
-      />
+      {/* MI HISTÓRICO */}
+      {vista === 'historico' && (
+        <div className="anim-fade-in-up anim-stagger-1">
+          <SeccionHistorico
+            snapshot={snapshot} agenteSlug={agenteSlug}
+            mesesDisponibles={mesesDisponibles} color={spec.color}
+            config={config}
+          />
+        </div>
+      )}
 
       <p className="text-[11px] text-muted2 text-center pt-2">
         Datos generados el {fechaCorta(snapshot.meta.generadoEn)}
@@ -94,8 +126,15 @@ export default function AgenteView({
 }
 
 // ============================================================ CABECERA
+const VISTA_LABELS: Record<AgenteVista, string> = {
+  panel: 'Mi panel',
+  metas: 'Mis metas',
+  rendimiento: 'Mi rendimiento',
+  historico: 'Mi histórico',
+};
+
 function CabeceraAgente({
-  spec, snapshot, mesSel, mesActualReal, onChangeMes, mesesDisponibles,
+  spec, snapshot, mesSel, mesActualReal, onChangeMes, mesesDisponibles, vista,
 }: {
   spec: typeof AGENTES.fernanda;
   snapshot: DataSnapshot;
@@ -103,6 +142,7 @@ function CabeceraAgente({
   mesActualReal: MesKey;
   onChangeMes: (m: MesKey) => void;
   mesesDisponibles: MesKey[];
+  vista: AgenteVista;
 }) {
   const dias = diasTrabajados(snapshot, spec.slug, mesSel);
   const ultimoDia = ultimoDiaConDatos(snapshot, spec.slug, mesSel);
@@ -117,9 +157,13 @@ function CabeceraAgente({
           {spec.initials}
         </div>
         <div>
-          <p className="eyebrow mb-1">{spec.cupon ? `Cupón ${spec.cupon}` : 'Asesora'}</p>
+          <p className="eyebrow mb-1">
+            {VISTA_LABELS[vista]}{spec.cupon ? ` · cupón ${spec.cupon}` : ''}
+          </p>
           <h1 className="font-display text-[28px] font-semibold leading-tight text-ink">
-            Hola, {spec.nombre.split(' ')[0]}
+            {vista === 'panel'
+              ? <>Hola, {spec.nombre.split(' ')[0]}</>
+              : spec.nombre}
           </h1>
           <p className="text-[13px] text-muted mt-1.5">
             {mesSel === mesActualReal ? (
@@ -130,7 +174,7 @@ function CabeceraAgente({
               </>
             ) : (
               <>
-                Reporte histórico de <span className="font-semibold text-ink2">{MES_LABEL[mesSel]} 2026</span>
+                Periodo histórico: <span className="font-semibold text-ink2">{MES_LABEL[mesSel]} 2026</span>
               </>
             )}
           </p>

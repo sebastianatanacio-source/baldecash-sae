@@ -10,26 +10,54 @@ import type { ComisionConfig, SnapshotMeta } from '@/lib/domain/types';
 
 interface UserPub { username: 'admin' | 'jefa' | 'fernanda' | 'stefania' | 'julio' | 'luz'; rol: string; display: string }
 
+export type AdminVista = 'carga' | 'comisiones' | 'comisiones-luz' | 'usuarios';
+
+const TITULOS: Record<AdminVista, { eyebrow: string; title: string; subtitle: string }> = {
+  'carga': {
+    eyebrow: 'Carga de datos',
+    title: 'Actualización diaria',
+    subtitle: 'Sube el CSV de Blip y el XLSX de Admin para refrescar los reportes del equipo.',
+  },
+  'comisiones': {
+    eyebrow: 'Esquema general',
+    title: 'Tramos para Fernanda, Stefania y Julio',
+    subtitle: 'Base mensual y tramos del Pilar 1 (Aprobadas-Entregadas) y Pilar 2 (% Sol/Aten). Comisión vieja como referencia.',
+  },
+  'comisiones-luz': {
+    eyebrow: 'Esquema SAE',
+    title: 'Tramos específicos de Luz',
+    subtitle: 'Pilar 1: consultas solucionadas (universo unificado, meta 1,100/mes). Pilar 2: guardrail de calidad (% resolución).',
+  },
+  'usuarios': {
+    eyebrow: 'Cuentas',
+    title: 'Gestión de usuarios',
+    subtitle: 'Cambia el nombre que se muestra en la plataforma o restablece contraseñas de cualquier usuario.',
+  },
+};
+
 export default function AdminView({
-  snapshotMeta, config, users,
-}: { snapshotMeta: SnapshotMeta | null; config: ComisionConfig; users: UserPub[] }) {
+  snapshotMeta, config, users, vista = 'carga',
+}: {
+  snapshotMeta: SnapshotMeta | null;
+  config: ComisionConfig;
+  users: UserPub[];
+  vista?: AdminVista;
+}) {
+  const t = TITULOS[vista];
   return (
     <div className="space-y-7">
       <header>
-        <p className="eyebrow mb-2">Administración</p>
+        <p className="eyebrow mb-2">{t.eyebrow}</p>
         <h1 className="font-display text-[28px] font-semibold leading-tight text-ink">
-          Configuración del sistema
+          {t.title}
         </h1>
-        <p className="text-[13.5px] text-muted mt-2 max-w-3xl">
-          Carga diaria de archivos, ajuste de los tramos del esquema de comisiones y gestión de credenciales del equipo.
-        </p>
+        <p className="text-[13.5px] text-muted mt-2 max-w-3xl">{t.subtitle}</p>
       </header>
 
-      <UploadCard meta={snapshotMeta} />
-
-      <ConfigCard config={config} />
-
-      <UsersCard usuarios={users} />
+      {vista === 'carga'         && <UploadCard meta={snapshotMeta} />}
+      {vista === 'comisiones'    && <ConfigCard config={config} />}
+      {vista === 'comisiones-luz'&& <ConfigLuzCard config={config} />}
+      {vista === 'usuarios'      && <UsersCard usuarios={users} />}
     </div>
   );
 }
@@ -372,6 +400,175 @@ function ConfigCard({ config: initial }: { config: ComisionConfig }) {
         )}
         <button onClick={save} disabled={saving} className="btn-primary">
           {saving ? 'Guardando…' : 'Guardar configuración'}
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+// ============================================================ CONFIG LUZ
+function ConfigLuzCard({ config: initial }: { config: ComisionConfig }) {
+  const router = useRouter();
+  const [cfg, setCfg] = useState<ComisionConfig>(initial);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const baseLuz = cfg.baseLuzSol ?? cfg.baseSol;
+  const pilar1 = cfg.pilarLuz1 ?? cfg.pilar1;
+  const pilar2 = cfg.pilarLuz2 ?? cfg.pilar2;
+
+  async function save() {
+    setSaving(true); setError(null);
+    try {
+      const r = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: cfg }),
+      });
+      const data = await r.json();
+      if (!r.ok) { setError(data.error ?? 'Error al guardar.'); return; }
+      setSavedAt(Date.now());
+      router.refresh();
+    } catch (e: any) {
+      setError(e?.message ?? 'No se pudo contactar al servidor.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        eyebrow="Pilar 1 + Pilar 2 · esquema SAE"
+        title="Tramos específicos para Luz"
+        subtitle="Estos valores se aplican solo a Luz. El esquema general de Fernanda, Stefania y Julio no se ve afectado."
+      />
+
+      <div className="bg-aqua-100 border border-aqua-300 rounded-xl p-4 mb-5 text-[12.5px] text-aqua-700 leading-relaxed">
+        <strong>Recordatorio del esquema:</strong> Luz mide su Pilar 1 con <em>consultas solucionadas</em> (universo unificado de tipificaciones, meta 1,100/mes), no con AE. Su Pilar 2 actúa como guardrail de calidad: tasa de resolución sobre contestadas debe ser ≥ 60% y FRT mediana ≤ 30 segundos.
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-4 mb-5">
+        <div className="bg-bg/60 border border-line rounded-xl p-4">
+          <p className="eyebrow mb-2">Base mensual de Luz (S/)</p>
+          <input
+            type="number" min={0} step={50}
+            value={baseLuz}
+            onChange={e => setCfg({ ...cfg, baseLuzSol: Number(e.target.value || 0) })}
+            className="input-field font-display text-[20px] font-semibold tabular"
+          />
+          <p className="text-[10.5px] text-muted2 mt-1.5">
+            Por defecto se usa la base general ({cfg.baseSol}). Cambia este valor si Luz tiene una base distinta.
+          </p>
+        </div>
+        <div className="bg-bg/60 border border-line rounded-xl p-4">
+          <p className="eyebrow mb-2">Meta mensual sugerida</p>
+          <div className="flex items-baseline gap-2 pt-1">
+            <span className="font-display text-[24px] font-semibold tabular text-ink">1,100</span>
+            <span className="text-[12px] text-muted">consultas solucionadas / mes</span>
+          </div>
+          <p className="text-[10.5px] text-muted2 mt-1.5">
+            ≈ 50 sol / día sobre 22 días hábiles. Ajusta los tramos abajo para cambiar este objetivo.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        <div>
+          <p className="eyebrow mb-2">Pilar 1 — Consultas solucionadas × multiplicador</p>
+          {pilar1.map((t, i) => (
+            <div key={i} className="grid grid-cols-3 gap-2 mb-2">
+              <input
+                type="number" min={0}
+                value={t.min}
+                onChange={e => {
+                  const next = [...pilar1]; next[i] = { ...t, min: Number(e.target.value || 0) };
+                  setCfg({ ...cfg, pilarLuz1: next });
+                }}
+                placeholder="Solucionadas mín"
+                className="input-field font-mono"
+              />
+              <input
+                type="number" min={0} step={0.05}
+                value={t.mul}
+                onChange={e => {
+                  const next = [...pilar1]; next[i] = { ...t, mul: Number(e.target.value || 0) };
+                  setCfg({ ...cfg, pilarLuz1: next });
+                }}
+                placeholder="× multipl."
+                className="input-field font-mono"
+              />
+              <input
+                type="text"
+                value={t.label}
+                onChange={e => {
+                  const next = [...pilar1]; next[i] = { ...t, label: e.target.value };
+                  setCfg({ ...cfg, pilarLuz1: next });
+                }}
+                placeholder="Etiqueta"
+                className="input-field"
+              />
+            </div>
+          ))}
+          <p className="text-[10.5px] text-muted2 mt-1">
+            Default: 0 (bajo piso) · 900 (mínimo) · 1,100 (esperado, 1.25×) · 1,300 (sobre meta, 1.5×)
+          </p>
+        </div>
+        <div>
+          <p className="eyebrow mb-2">Pilar 2 — % Resolución → bono / guardrail</p>
+          {pilar2.map((t, i) => (
+            <div key={i} className="grid grid-cols-3 gap-2 mb-2">
+              <input
+                type="number" min={0} step={0.5}
+                value={t.min}
+                onChange={e => {
+                  const next = [...pilar2]; next[i] = { ...t, min: Number(e.target.value || 0) };
+                  setCfg({ ...cfg, pilarLuz2: next });
+                }}
+                placeholder="% mín"
+                className="input-field font-mono"
+              />
+              <input
+                type="number" min={0} step={50}
+                value={t.bono}
+                onChange={e => {
+                  const next = [...pilar2]; next[i] = { ...t, bono: Number(e.target.value || 0) };
+                  setCfg({ ...cfg, pilarLuz2: next });
+                }}
+                placeholder="S/ bono"
+                className="input-field font-mono"
+              />
+              <input
+                type="text"
+                value={t.label}
+                onChange={e => {
+                  const next = [...pilar2]; next[i] = { ...t, label: e.target.value };
+                  setCfg({ ...cfg, pilarLuz2: next });
+                }}
+                placeholder="Etiqueta"
+                className="input-field"
+              />
+            </div>
+          ))}
+          <p className="text-[10.5px] text-muted2 mt-1">
+            Default: &lt; 60% sin bono · ≥ 60% bono S/ 200. El umbral 60% es el guardrail de calidad.
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mt-4 text-[13px] text-gold-700 bg-gold-100 border border-gold-300 rounded-lg px-4 py-3">
+          {error}
+        </div>
+      )}
+
+      <div className="mt-5 flex items-center justify-end gap-3">
+        {savedAt && (
+          <span className="text-[12px] text-aqua-700">Configuración guardada</span>
+        )}
+        <button onClick={save} disabled={saving} className="btn-primary">
+          {saving ? 'Guardando…' : 'Guardar tramos de Luz'}
         </button>
       </div>
     </Card>
