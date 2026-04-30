@@ -16,7 +16,7 @@ import {
 import { esBlipOnly } from '@/lib/domain/agentes';
 import {
   combinarMetricas, fechaCorta, mesActual, metricasAgente, metricasEquipo,
-  metricasMeta, nf, pct, solicitudesParaPct,
+  metricasLuzEfectivas, metricasMeta, nf, pct, solicitudesParaPct,
   diasTrabajados, diasTotalesDelMes, proyectarFinDeMes,
   tramosP1Para, tramosP2Para,
 } from '@/lib/domain/helpers';
@@ -552,18 +552,19 @@ function TarjetaLuz({
   config: ComisionConfig;
   m: ReturnType<typeof metricasAgente>;
 }) {
-  const luz = calcularComisionLuz(m.pctResolucion, config);
+  // Reclasificación efectiva con la config actual (universo de tipificaciones)
+  const ef = metricasLuzEfectivas(m, config);
+  const luz = calcularComisionLuz(ef.pctResolucion, config);
+
   const dias = diasTrabajados(snapshot, spec.slug, mes);
   const total = diasTotalesDelMes(mes);
-  const cerProy = dias > 0 ? proyectarFinDeMes(m.cerradas, dias, total) : m.cerradas;
-  const noConProy = dias > 0 ? proyectarFinDeMes(m.noContesta, dias, total) : m.noContesta;
-  const soluProy = dias > 0 ? proyectarFinDeMes(m.solucionadas, dias, total) : m.solucionadas;
-  const conProy = Math.max(0, cerProy - noConProy);
+  const conProy = dias > 0 ? proyectarFinDeMes(ef.contestadas, dias, total) : ef.contestadas;
+  const soluProy = dias > 0 ? proyectarFinDeMes(ef.solucionadas, dias, total) : ef.solucionadas;
   const pctProy = conProy > 0 ? +(soluProy / conProy * 100).toFixed(1) : 0;
   const luzProy = calcularComisionLuz(pctProy, config);
-  const ppFaltantes = +(luz.umbralPct - m.pctResolucion).toFixed(1);
+  const ppFaltantes = +(luz.umbralPct - ef.pctResolucion).toFixed(1);
 
-  const progPct = Math.min(100, (m.pctResolucion / luz.umbralPct) * 100);
+  const progPct = Math.min(100, (ef.pctResolucion / luz.umbralPct) * 100);
 
   return (
     <div className="card-surface p-6">
@@ -597,7 +598,7 @@ function TarjetaLuz({
             <span className="text-[12px] font-semibold text-ink">Tasa de resolución</span>
           </div>
           <div className="flex items-center gap-2 text-[12px]">
-            <span className="font-display font-semibold tabular text-ink">{m.pctResolucion.toFixed(1)}%</span>
+            <span className="font-display font-semibold tabular text-ink">{ef.pctResolucion.toFixed(1)}%</span>
             <span className="text-muted2 tabular">/ {luz.umbralPct}%</span>
             <span
               className="px-2 py-0.5 rounded-md text-[10px] font-bold"
@@ -633,7 +634,7 @@ function TarjetaLuz({
         </div>
         <div>
           <div className="text-muted2 uppercase tracking-wider text-[9.5px]">Solucionadas</div>
-          <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{nf(m.solucionadas)}</div>
+          <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{nf(ef.solucionadas)}</div>
         </div>
         <div>
           <div className="text-muted2 uppercase tracking-wider text-[9.5px]">Días trabajados</div>
