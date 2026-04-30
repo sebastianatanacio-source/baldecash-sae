@@ -376,7 +376,9 @@ function SeccionHoy({
   const dia = ag.diario[mes] ?? [];
   if (dia.length === 0) return null;
 
-  const ultimoIdx = [...dia].reverse().findIndex(d => d.aten > 0 || d.ae > 0 || d.deja > 0);
+  const ultimoIdx = [...dia].reverse().findIndex(d =>
+    d.aten > 0 || d.ae > 0 || d.deja > 0 || (d.solucionadas ?? 0) > 0,
+  );
   if (ultimoIdx === -1) return null;
   const idxReal = dia.length - 1 - ultimoIdx;
   const hoy = dia[idxReal];
@@ -390,6 +392,8 @@ function SeccionHoy({
   const cumAten = dia.slice(0, idxReal + 1).reduce((a, d) => a + d.aten, 0);
   const cumAE   = dia.slice(0, idxReal + 1).reduce((a, d) => a + d.ae, 0);
   const cumDeja = dia.slice(0, idxReal + 1).reduce((a, d) => a + d.deja, 0);
+  const cumSolu = dia.slice(0, idxReal + 1).reduce((a, d) => a + (d.solucionadas ?? 0), 0);
+  const cumCerr = dia.slice(0, idxReal + 1).reduce((a, d) => a + (d.cerradas ?? 0), 0);
 
   return (
     <section>
@@ -397,45 +401,49 @@ function SeccionHoy({
         <span className="w-1 h-5 rounded-full" style={{ background: color }} />
         Tu jornada más reciente <span className="text-muted2 text-[14px] font-normal">· {hoy.day}</span>
       </h2>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi
-          label="Atenciones del día"
-          value={nf(hoy.aten)}
-          accent={color}
-          delta={delta(hoy.aten, ayer?.aten ?? null)}
-          hint={`Acumulado del mes: ${nf(cumAten)}`}
-        />
-        <Kpi
-          label="Deja solicitud"
-          value={nf(hoy.deja)}
-          accent="#4453A0"
-          delta={delta(hoy.deja, ayer?.deja ?? null)}
-          hint={`Acumulado del mes: ${nf(cumDeja)}`}
-        />
-        {!blipOnly && (
+
+      {/* Asesoras con esquema general (Fernanda/Stefania/Julio) */}
+      {!blipOnly && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Kpi label="Atenciones del día" value={nf(hoy.aten)} accent={color} delta={delta(hoy.aten, ayer?.aten ?? null)} hint={`Acumulado del mes: ${nf(cumAten)}`} />
+          <Kpi label="Deja solicitud" value={nf(hoy.deja)} accent="#4453A0" delta={delta(hoy.deja, ayer?.deja ?? null)} hint={`Acumulado del mes: ${nf(cumDeja)}`} />
+          <Kpi label="Aprobadas-entregadas hoy" value={nf(hoy.ae)} accent="#D1A646" delta={delta(hoy.ae, ayer?.ae ?? null)} hint={`Acumulado del mes: ${nf(cumAE)}`} />
+          <Kpi label="Conversión del día" value={hoy.aten > 0 ? `${(hoy.deja / hoy.aten * 100).toFixed(1)}%` : '—'} accent="#00A29B" hint="Cuántas conversaciones piden financiamiento" />
+        </div>
+      )}
+
+      {/* Luz (Blip-only · esquema SAE) */}
+      {blipOnly && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Kpi
-            label="Aprobadas-entregadas hoy"
-            value={nf(hoy.ae)}
-            accent="#D1A646"
-            delta={delta(hoy.ae, ayer?.ae ?? null)}
-            hint={`Acumulado del mes: ${nf(cumAE)}`}
+            label="Atenciones del día"
+            value={nf(hoy.aten)}
+            accent={color}
+            delta={delta(hoy.aten, ayer?.aten ?? null)}
+            hint={`Acumulado del mes: ${nf(cumAten)}`}
           />
-        )}
-        <Kpi
-          label={blipOnly ? '% Deja / Aten del día' : 'Conversión del día'}
-          value={hoy.aten > 0 ? `${(hoy.deja / hoy.aten * 100).toFixed(1)}%` : '—'}
-          accent="#00A29B"
-          hint={blipOnly ? 'Tu indicador del Pilar 2' : 'Cuántas conversaciones piden financiamiento'}
-        />
-        {blipOnly && (
           <Kpi
-            label="Acumulado mes"
-            value={nf(cumDeja)}
-            accent="#D1A646"
-            hint="Deja-solicitud del mes hasta hoy"
+            label="Cerradas por ti"
+            value={nf(hoy.cerradas ?? 0)}
+            accent="#4453A0"
+            delta={delta(hoy.cerradas ?? 0, ayer?.cerradas ?? null)}
+            hint={`Acumulado del mes: ${nf(cumCerr)}`}
           />
-        )}
-      </div>
+          <Kpi
+            label="Consultas solucionadas"
+            value={nf(hoy.solucionadas ?? 0)}
+            accent="#00A29B"
+            delta={delta(hoy.solucionadas ?? 0, ayer?.solucionadas ?? null)}
+            hint={`Acumulado del mes: ${nf(cumSolu)} / 1,100 meta`}
+          />
+          <Kpi
+            label="Tasa de resolución del día"
+            value={(hoy.cerradas ?? 0) > 0 ? `${((hoy.solucionadas ?? 0) / (hoy.cerradas ?? 1) * 100).toFixed(1)}%` : '—'}
+            accent={(hoy.cerradas ?? 0) > 0 && (hoy.solucionadas ?? 0) / hoy.cerradas! * 100 >= 60 ? '#00A29B' : '#D1A646'}
+            hint="Solucionadas ÷ cerradas del día"
+          />
+        </div>
+      )}
     </section>
   );
 }
@@ -552,10 +560,14 @@ function SeccionDesempeno({
             />
           </div>
           <div className="bg-bg/40 border border-line rounded-xl p-4 grid grid-cols-2 lg:grid-cols-4 gap-3 text-[12px]">
-            <KpiCompact label="Cerradas" value={nf(m.cerradas)} accent="#4453A0" />
+            <KpiCompact label="Cerradas por ti" value={nf(m.cerradas)} accent="#4453A0" />
             <KpiCompact label="No contesta" value={nf(m.noContesta)} accent="#D1A646" />
             <KpiCompact label="Transferidas" value={nf(m.transferidas)} accent="#6873D7" />
-            <KpiCompact label="Deja solicitud" value={nf(m.deja)} accent="#36B7B3" />
+            <KpiCompact
+              label="Contestadas"
+              value={nf(Math.max(0, m.cerradas - m.noContesta))}
+              accent="#36B7B3"
+            />
           </div>
         </>
       )}
@@ -565,7 +577,9 @@ function SeccionDesempeno({
           <CardHeader
             eyebrow="Volumen diario"
             title="Atenciones día a día"
-            subtitle="Cómo se distribuye la carga en el mes"
+            subtitle={esBlipOnly(spec.slug)
+              ? 'Atenciones totales y consultas solucionadas (universo unificado)'
+              : 'Cómo se distribuye la carga en el mes'}
             right={
               <div className="flex gap-3 text-[12px]">
                 <span className="text-muted">Total <strong className="text-ink tabular ml-1">{nf(m.aten)}</strong></span>
@@ -575,16 +589,28 @@ function SeccionDesempeno({
           />
           <LineChart
             labels={dia.map(d => d.day)}
-            series={[
-              { label: 'Atenciones', data: dia.map(d => d.aten), color: spec.color, fill: true },
-              { label: 'Deja sol.',  data: dia.map(d => d.deja), color: '#98A9DF' },
-            ]}
+            series={
+              esBlipOnly(spec.slug)
+                ? [
+                    { label: 'Atenciones',   data: dia.map(d => d.aten), color: spec.color, fill: true },
+                    { label: 'Solucionadas', data: dia.map(d => d.solucionadas ?? 0), color: '#00A29B' },
+                  ]
+                : [
+                    { label: 'Atenciones', data: dia.map(d => d.aten), color: spec.color, fill: true },
+                    { label: 'Deja sol.',  data: dia.map(d => d.deja), color: '#98A9DF' },
+                  ]
+            }
             height={280}
             legend
           />
           <div className="grid grid-cols-3 gap-3 mt-5 pt-5 border-t border-line">
             <KpiCompact label="Cola promedio" value={nf(m.qtAvg, 1)} unit="min" accent="#36B7B3" />
-            <KpiCompact label="1ª respuesta" value={nf(m.frtAvg, 2)} unit="min" accent="#00A29B" />
+            <KpiCompact
+              label={esBlipOnly(spec.slug) ? '1ª resp · mediana' : '1ª respuesta'}
+              value={esBlipOnly(spec.slug) ? nf(m.frtMedianaSeg, 0) : nf(m.frtAvg, 2)}
+              unit={esBlipOnly(spec.slug) ? 'seg' : 'min'}
+              accent="#00A29B"
+            />
             <KpiCompact label="Resp. entre msgs" value={nf(m.artAvg, 1)} unit="min" accent="#007974" />
           </div>
         </Card>

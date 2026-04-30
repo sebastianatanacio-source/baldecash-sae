@@ -103,11 +103,14 @@ export async function buildSnapshot(input: BuildSnapshotInput): Promise<BuildSna
         cerradas, solucionadas, noContesta, transferidas, pctResolucion,
       };
 
-      // Serie diaria: combinar atenciones/deja de Blip + AE de Admin por día
+      // Serie diaria: combinar atenciones/deja/solucionadas de Blip + AE de Admin por día
       const dias = new Map<string, SerieDiariaPunto>();
       if (b) {
         for (const [day, val] of b.diario) {
-          dias.set(day, { day, aten: val.aten, deja: val.deja, ae: 0, dow: val.dow });
+          dias.set(day, {
+            day, aten: val.aten, deja: val.deja, ae: 0,
+            cerradas: val.cerradas, solucionadas: val.solucionadas, dow: val.dow,
+          });
         }
       }
       if (a) {
@@ -115,9 +118,8 @@ export async function buildSnapshot(input: BuildSnapshotInput): Promise<BuildSna
           const existing = dias.get(day);
           if (existing) existing.ae = ae;
           else {
-            // Calcular dow para ese día (DD-MM, asumiendo año del mes)
             const dow = dowFromDDMM(day, mes, mesesOrdenados);
-            dias.set(day, { day, aten: 0, deja: 0, ae, dow });
+            dias.set(day, { day, aten: 0, deja: 0, ae, cerradas: 0, solucionadas: 0, dow });
           }
         }
       }

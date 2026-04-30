@@ -59,6 +59,10 @@ export interface SerieDiariaPunto {
   aten: number;
   deja: number;
   ae: number;
+  /** Cerradas por la agente (no transferidas) */
+  cerradas: number;
+  /** Tipificaciones del universo "solucionadas" para SAE / Luz */
+  solucionadas: number;
   /** Día de semana 0=Lun … 6=Dom */
   dow: number;
 }

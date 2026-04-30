@@ -19,7 +19,7 @@ interface BlipAcc {
   artSum: number; artN: number;
   canales: { whatsapp: number; facebook: number; otro: number };
   tags: Map<string, number>;
-  diario: Map<string, { aten: number; deja: number; dow: number }>;
+  diario: Map<string, { aten: number; deja: number; cerradas: number; solucionadas: number; dow: number }>;
   hora: number[]; // 24
   // ============== Para Luz (SAE) ==============
   cerradas: number;
@@ -150,7 +150,7 @@ export function parseBlipCsv(csvText: string): BlipResultado {
     const jsDow = dt.getDay(); // 0=Sun
     const dow = (jsDow + 6) % 7; // 0=Lun..6=Dom
     let dia = acc.diario.get(day);
-    if (!dia) { dia = { aten: 0, deja: 0, dow }; acc.diario.set(day, dia); }
+    if (!dia) { dia = { aten: 0, deja: 0, cerradas: 0, solucionadas: 0, dow }; acc.diario.set(day, dia); }
     dia.aten++;
 
     // Hora
@@ -176,9 +176,9 @@ export function parseBlipCsv(csvText: string): BlipResultado {
     const status = (idxStatus >= 0 ? String(row[idxStatus] || '') : '').toLowerCase();
     const esTransferida = status.includes('transfer');
     if (esTransferida) acc.transferidas++;
-    else acc.cerradas++;
+    else { acc.cerradas++; dia.cerradas++; }
 
-    if (esSolucionada) acc.solucionadas++;
+    if (esSolucionada) { acc.solucionadas++; dia.solucionadas++; }
     if (esNoContesta) acc.noContesta++;
 
     // Métricas operativas (en minutos para los promedios actuales)
