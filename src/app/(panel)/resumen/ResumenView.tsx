@@ -73,9 +73,16 @@ export default function ResumenView({
         <ChipGroup options={chipOptions} value={mes} onChange={setMes} />
       </header>
 
-      {/* ============== PROGRESO DEL EQUIPO — MES ACTUAL ============== */}
+      {/* ============== PROGRESO DEL EQUIPO ============== */}
+      {/* Respeta el filtro de chips: si está en 'Período completo', usa el mes
+          más reciente; si la jefa/admin elige un mes, las tarjetas también
+          se actualizan a ese mes. */}
       {mesPorDefecto && (
-        <ProgresoEquipo snapshot={snapshot} mes={mesPorDefecto} config={config} />
+        <ProgresoEquipo
+          snapshot={snapshot}
+          mes={mes === 'all' ? mesPorDefecto : (mes as MesKey)}
+          config={config}
+        />
       )}
 
       {/* ============== KPIs HERO ============== */}
@@ -179,6 +186,9 @@ export default function ResumenView({
           </div>
         </Card>
       </section>
+
+      {/* ============== UNIVERSO SAE · LUZ ============== */}
+      <UniversoSAE snapshot={snapshot} config={config} mes={mes} />
 
       {/* ============== REPARTO POR ASESORA ============== */}
       <Card>
@@ -324,6 +334,72 @@ function TablaResumen({ snapshot }: { snapshot: DataSnapshot }) {
         </tfoot>
       </table>
     </div>
+  );
+}
+
+// ============================================================
+// UNIVERSO SAE · LUZ — KPIs específicos del esquema todo-o-nada
+// ============================================================
+function UniversoSAE({
+  snapshot, config, mes,
+}: { snapshot: DataSnapshot; config: ComisionConfig; mes: MesFiltro }) {
+  if (!snapshot.agentes.luz) return null;
+  const m = metricasAgente(snapshot, 'luz', mes);
+  if (m.aten === 0 && m.cerradas === 0) return null;
+
+  const ef = metricasLuzEfectivas(m, config);
+  const luzCom = calcularComisionLuz(ef.pctResolucion, config);
+
+  const meses = snapshot.meta.meses;
+  const luzPorMes = meses.map(mk =>
+    metricasLuzEfectivas(metricasAgente(snapshot, 'luz', mk), config),
+  );
+
+  return (
+    <Card>
+      <CardHeader
+        eyebrow="Universo SAE · Luz"
+        title="Atención SAE y tasa de resolución"
+        subtitle="Tipificaciones que cuentan como solucionada sobre las contestadas (esquema todo-o-nada)"
+        right={
+          <Pill tone={luzCom.cumple ? 'aqua' : 'gold'}>
+            {ef.pctResolucion.toFixed(1)}% / {luzCom.umbralPct}%
+          </Pill>
+        }
+      />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+        <KpiCompact label="Atenciones" value={nf(m.aten)} accent="#6873D7" />
+        <KpiCompact label="Cerradas por Luz" value={nf(m.cerradas)} accent="#4453A0" />
+        <KpiCompact label="Solucionadas" value={nf(ef.solucionadas)} accent="#00A29B" />
+        <KpiCompact label="No contesta" value={nf(ef.noContesta)} accent="#D1A646" />
+        <KpiCompact label="Contestadas" value={nf(ef.contestadas)} accent="#36B7B3" />
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
+        <KpiCompact
+          label="Tasa de resolución"
+          value={pct(ef.pctResolucion, 1)}
+          accent={ef.pctResolucion >= luzCom.umbralPct ? '#00A29B' : '#D1A646'}
+        />
+        <KpiCompact label="Transferidas" value={nf(m.transferidas)} accent="#98A9DF" />
+        <KpiCompact
+          label={luzCom.cumple ? 'Comisión (cumple umbral)' : 'Comisión (no cumple)'}
+          value={formatSol(luzCom.total)}
+          accent={luzCom.cumple ? '#00A29B' : '#D1A646'}
+        />
+      </div>
+      <div className="border-t border-line pt-5">
+        <p className="eyebrow mb-3">Solucionadas vs contestadas por mes</p>
+        <BarChart
+          labels={meses.map(mk => MES_LABEL_CORTO[mk])}
+          series={[
+            { label: 'Contestadas',  data: luzPorMes.map(x => x.contestadas),  color: '#6873D7' },
+            { label: 'Solucionadas', data: luzPorMes.map(x => x.solucionadas), color: '#00A29B' },
+          ]}
+          legend
+          height={200}
+        />
+      </div>
+    </Card>
   );
 }
 
