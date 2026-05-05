@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Kpi, KpiCompact } from '@/components/ui/Kpi';
@@ -54,6 +55,7 @@ export default function AgenteView({
           mesesDisponibles={mesesDisponibles}
           vista={vista}
         />
+        <NavVistaAgente slug={agenteSlug} vista={vista} color={spec.color} />
       </div>
 
       {/* MI PANEL: jornada del día + KPIs hero (sin metas detalladas) */}
@@ -192,6 +194,40 @@ function CabeceraAgente({
         />
       </div>
     </header>
+  );
+}
+
+// ============================================================ NAV TABS
+function NavVistaAgente({
+  slug, vista, color,
+}: { slug: AgenteSlug; vista: AgenteVista; color: string }) {
+  const tabs: Array<{ v: AgenteVista; label: string; href: string }> = [
+    { v: 'panel',       label: 'Mi panel',       href: `/agente/${slug}` },
+    { v: 'metas',       label: 'Mis metas',      href: `/agente/${slug}/metas` },
+    { v: 'rendimiento', label: 'Mi rendimiento', href: `/agente/${slug}/rendimiento` },
+    { v: 'historico',   label: 'Mi histórico',   href: `/agente/${slug}/historico` },
+  ];
+  return (
+    <nav className="mt-5 flex flex-wrap items-center gap-1 border-b border-line">
+      {tabs.map(t => {
+        const active = t.v === vista;
+        return (
+          <Link
+            key={t.v}
+            href={t.href}
+            prefetch={false}
+            className={`-mb-px px-4 py-2 text-[12.5px] font-semibold border-b-2 transition-colors ${
+              active
+                ? 'text-ink'
+                : 'border-transparent text-muted hover:text-ink2'
+            }`}
+            style={active ? { borderColor: color, color } : undefined}
+          >
+            {t.label}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 
