@@ -11,6 +11,28 @@ const KEY = 'config.json';
 const LOCAL_PATH = path.join(process.cwd(), 'data', KEY);
 const useBlob = () => Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 
+/**
+ * Detecta si el config guardado está bajo el esquema viejo (AE → multiplicador,
+ * % → bono) y lo migra al esquema nuevo (% → multiplicador, AE → bono).
+ *
+ * Señal del esquema viejo: ningún tramo de pilar1 tiene mul=0 (el tramo
+ * "sin comisión por <5%" es exclusivo del esquema nuevo).
+ *
+ * La migración reemplaza pilar1 y pilar2 con los defaults nuevos, pero
+ * preserva baseSol, comisiones viejas y configuración SAE de Luz.
+ */
+function migrarSiNecesario(cfg: ComisionConfig): ComisionConfig {
+  const esEsquemaNuevo =
+    Array.isArray(cfg.pilar1) &&
+    cfg.pilar1.some(t => t && t.mul === 0);
+  if (esEsquemaNuevo) return cfg;
+  return {
+    ...cfg,
+    pilar1: DEFAULT_CONFIG.pilar1,
+    pilar2: DEFAULT_CONFIG.pilar2,
+  };
+}
+
 export async function loadConfig(): Promise<ComisionConfig> {
   if (useBlob()) {
     try {
@@ -20,13 +42,24 @@ export async function loadConfig(): Promise<ComisionConfig> {
       if (!blob) return DEFAULT_CONFIG;
       const r = await fetch(blob.url, { cache: 'no-store' });
       if (!r.ok) return DEFAULT_CONFIG;
-      return (await r.json()) as ComisionConfig;
+      const raw = (await r.json()) as ComisionConfig;
+      const migrated = migrarSiNecesario(raw);
+      // Si hubo migración, persistimos para que la próxima lectura sea directa
+      if (migrated !== raw) {
+        try { await saveConfig(migrated); } catch { /* no bloqueamos lectura por fallo de save */ }
+      }
+      return migrated;
     } catch {
       return DEFAULT_CONFIG;
     }
   }
   try {
-    return JSON.parse(await fs.readFile(LOCAL_PATH, 'utf-8')) as ComisionConfig;
+    const raw = JSON.parse(await fs.readFile(LOCAL_PATH, 'utf-8')) as ComisionConfig;
+    const migrated = migrarSiNecesario(raw);
+    if (migrated !== raw) {
+      try { await saveConfig(migrated); } catch { /* idem */ }
+    }
+    return migrated;
   } catch (err: any) {
     if (err?.code === 'ENOENT') return DEFAULT_CONFIG;
     return DEFAULT_CONFIG;
