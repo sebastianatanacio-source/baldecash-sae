@@ -131,10 +131,11 @@ export default function ResumenView({
             subtitle="Atenciones, deja-solicitud y métricas operativas"
             right={<Pill tone="blue">Blip</Pill>}
           />
-          <div className="grid grid-cols-3 gap-3 mb-5">
+          <div className="grid grid-cols-4 gap-3 mb-5">
             <KpiCompact label="Atenciones" value={nf(equipo.aten)} accent="#4453A0" />
+            <KpiCompact label="Cerradas" value={nf(equipo.cerradas)} accent="#00A29B" />
+            <KpiCompact label="Transferidas" value={nf(equipo.transferidas)} accent="#98A9DF" />
             <KpiCompact label="Deja solicitud" value={nf(equipo.deja)} accent="#6873D7" />
-            <KpiCompact label="% Deja-solicitud" value={pct(equipo.pctDeja, 1)} accent="#98A9DF" />
           </div>
           <div className="grid grid-cols-3 gap-3 mb-6">
             <KpiCompact label="Cola promedio" value={nf(equipo.qtAvg, 1)} unit="min" accent="#36B7B3" />
@@ -284,10 +285,11 @@ function TablaResumen({ snapshot }: { snapshot: DataSnapshot }) {
             <th className="px-6 py-3 font-semibold text-[11px] uppercase tracking-wider">Asesora</th>
             <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider">Mes</th>
             <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Aten.</th>
+            <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Cerradas</th>
+            <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Transf.</th>
             <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Deja</th>
-            <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">% Deja</th>
             <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Sol.</th>
-            <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">% Sol</th>
+            <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">% Sol/Cerr.</th>
             <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">AE Cup.</th>
             <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">AE Pre.</th>
             <th className="px-6 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">AE Total</th>
@@ -304,8 +306,9 @@ function TablaResumen({ snapshot }: { snapshot: DataSnapshot }) {
               </td>
               <td className="px-3 py-3 text-muted2 uppercase tracking-wider text-[11px]">{MES_LABEL_CORTO[mes]}</td>
               <td className="px-3 py-3 text-right tabular">{nf(met!.aten)}</td>
+              <td className="px-3 py-3 text-right tabular font-semibold text-ink2">{nf(met!.cerradas)}</td>
+              <td className="px-3 py-3 text-right tabular text-muted">{nf(met!.transferidas)}</td>
               <td className="px-3 py-3 text-right tabular">{nf(met!.deja)}</td>
-              <td className="px-3 py-3 text-right tabular text-muted">{pct(met!.pctDeja, 1)}</td>
               <td className="px-3 py-3 text-right tabular">{nf(met!.sol)}</td>
               <td className="px-3 py-3 text-right tabular text-muted">{pct(met!.pctSol, 1)}</td>
               <td className="px-3 py-3 text-right tabular">{nf(met!.aeCup)}</td>
@@ -321,8 +324,9 @@ function TablaResumen({ snapshot }: { snapshot: DataSnapshot }) {
             <td className="px-6 py-3 text-ink uppercase tracking-wider text-[11px]">Total equipo</td>
             <td className="px-3 py-3" />
             <td className="px-3 py-3 text-right tabular text-ink">{nf(tot.aten)}</td>
+            <td className="px-3 py-3 text-right tabular text-ink">{nf(tot.cerradas)}</td>
+            <td className="px-3 py-3 text-right tabular text-muted">{nf(tot.transferidas)}</td>
             <td className="px-3 py-3 text-right tabular text-ink">{nf(tot.deja)}</td>
-            <td className="px-3 py-3 text-right tabular text-muted">{pct(tot.pctDeja, 1)}</td>
             <td className="px-3 py-3 text-right tabular text-ink">{nf(tot.sol)}</td>
             <td className="px-3 py-3 text-right tabular text-muted">{pct(tot.pctSol, 1)}</td>
             <td className="px-3 py-3 text-right tabular text-ink">{nf(tot.aeCup)}</td>
@@ -565,17 +569,21 @@ function TarjetaAsesora({
         </div>
       </div>
 
-      <div className="mt-5 pt-4 border-t border-line grid grid-cols-3 gap-3 text-[11px]">
+      <div className="mt-5 pt-4 border-t border-line grid grid-cols-4 gap-3 text-[11px]">
         <div>
           <div className="text-muted2 uppercase tracking-wider text-[9.5px]">Atenciones</div>
           <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{nf(m.aten)}</div>
         </div>
         <div>
-          <div className="text-muted2 uppercase tracking-wider text-[9.5px]">{blipOnly ? 'Deja sol.' : 'Solicitudes'}</div>
-          <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{nf(blipOnly ? m.deja : m.sol)}</div>
+          <div className="text-muted2 uppercase tracking-wider text-[9.5px]">Cerradas</div>
+          <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{nf(m.cerradas)}</div>
         </div>
         <div>
-          <div className="text-muted2 uppercase tracking-wider text-[9.5px]">Días trabajados</div>
+          <div className="text-muted2 uppercase tracking-wider text-[9.5px]">Solicitudes</div>
+          <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{nf(m.sol)}</div>
+        </div>
+        <div>
+          <div className="text-muted2 uppercase tracking-wider text-[9.5px]">Días trab.</div>
           <div className="font-display font-semibold text-[15px] tabular text-ink mt-0.5">{dias}</div>
         </div>
       </div>

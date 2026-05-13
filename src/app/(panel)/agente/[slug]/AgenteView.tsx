@@ -769,12 +769,26 @@ function SeccionDesempeno({
       </div>
 
       {seccion === 'resumen' && !esBlipOnly(spec.slug) && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Kpi label="Atenciones del mes" value={nf(m.aten)} accent="#4453A0" size="lg" hint={`${nf(m.cerradas)} cerradas · ${nf(m.transferidas)} transferidas`} />
-          <Kpi label="Deja solicitud" value={nf(m.deja)} accent="#6873D7" size="lg" hint={`${pct(m.pctDeja, 1)} sobre cerradas`} />
-          <Kpi label="Solicitudes" value={nf(m.sol)} accent="#00A29B" size="lg" hint={`${pct(m.pctSol, 1)} sobre cerradas · maneja P1`} />
-          <Kpi label="Aprobadas-entregadas" value={nf(m.aeTot)} accent="#D1A646" size="lg" hint={`Cupón ${nf(m.aeCup)} · Preowner ${nf(m.aePre)} · maneja P2`} />
-        </div>
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+            <Kpi label="Atenciones del mes" value={nf(m.aten)} accent="#4453A0" size="lg" hint={`Total incluye transferidas`} />
+            <Kpi
+              label="Cerradas por ti"
+              value={nf(m.cerradas)}
+              accent="#00A29B"
+              size="lg"
+              hint="Denominador del Pilar 1 (% Sol / Cerradas)"
+            />
+            <Kpi label="Solicitudes" value={nf(m.sol)} accent="#6873D7" size="lg" hint={`${pct(m.pctSol, 1)} sobre cerradas · maneja P1`} />
+            <Kpi label="Aprobadas-entregadas" value={nf(m.aeTot)} accent="#D1A646" size="lg" hint={`Cupón ${nf(m.aeCup)} · Preowner ${nf(m.aePre)} · maneja P2`} />
+          </div>
+          <div className="bg-bg/40 border border-line rounded-xl p-4 grid grid-cols-2 lg:grid-cols-4 gap-3 text-[12px]">
+            <KpiCompact label="Transferidas" value={nf(m.transferidas)} accent="#98A9DF" />
+            <KpiCompact label="Deja solicitud" value={nf(m.deja)} accent="#6873D7" />
+            <KpiCompact label="% Deja / Cerradas" value={pct(m.pctDeja, 1)} accent="#98A9DF" />
+            <KpiCompact label="% Sol / Cerradas" value={pct(m.pctSol, 1)} accent="#00A29B" />
+          </div>
+        </>
       )}
 
       {/* Resumen específico para Luz (SAE) — KPIs con universo configurable */}
@@ -1020,9 +1034,11 @@ function SeccionHistorico({
               <tr className="text-left text-muted">
                 <th className="px-6 py-3 font-semibold text-[11px] uppercase tracking-wider">Mes</th>
                 <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Atenciones</th>
+                <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Cerradas</th>
+                {!blipOnly && <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Transf.</th>}
                 <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Deja sol.</th>
                 {!blipOnly && <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Solicitudes</th>}
-                <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">{blipOnly ? '% Deja' : '% Sol'}</th>
+                <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">{blipOnly ? '% Deja' : '% Sol / Cerr.'}</th>
                 {!blipOnly && <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Aprob-Entreg</th>}
                 <th className="px-6 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Comisión</th>
               </tr>
@@ -1037,6 +1053,8 @@ function SeccionHistorico({
                     </div>
                   </td>
                   <td className="px-3 py-3 text-right tabular">{nf(f.met.aten)}</td>
+                  <td className="px-3 py-3 text-right tabular font-semibold text-ink2">{nf(f.met.cerradas)}</td>
+                  {!blipOnly && <td className="px-3 py-3 text-right tabular text-muted">{nf(f.met.transferidas)}</td>}
                   <td className="px-3 py-3 text-right tabular">{nf(f.met.deja)}</td>
                   {!blipOnly && <td className="px-3 py-3 text-right tabular">{nf(f.met.sol)}</td>}
                   <td className="px-3 py-3 text-right tabular text-muted">{pct(blipOnly ? f.met.pctDeja : f.met.pctSol, 1)}</td>
