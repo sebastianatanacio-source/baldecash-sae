@@ -23,9 +23,9 @@ const TITULOS: Record<AdminVista, { eyebrow: string; title: string; subtitle: st
     subtitle: 'Sube el CSV de Blip y el XLSX de Admin para refrescar los reportes del equipo.',
   },
   'comisiones': {
-    eyebrow: 'Esquema general',
+    eyebrow: 'Esquema general · vigente mayo 2026',
     title: 'Tramos para Fernanda, Stefania y Julio',
-    subtitle: 'Base mensual y tramos del Pilar 1 (Aprobadas-Entregadas) y Pilar 2 (% Sol/Aten). Comisión vieja como referencia.',
+    subtitle: 'Comisión base y tramos del Pilar 1 (% Sol/Cerradas × multiplicador, con piso de atenciones como guardrail) y Pilar 2 (AE del mes → bono fijo). Transferidas excluidas del denominador.',
   },
   'comisiones-luz': {
     eyebrow: 'Esquema SAE',
@@ -114,6 +114,7 @@ function UploadCard({ meta }: { meta: SnapshotMeta | null }) {
           ok: true,
           tomaMs: procMs,
           meta: data.meta,
+          merge: data.merge,
           blip: report.blip,
           admin: report.admin,
           warnings: report.warnings,
@@ -132,7 +133,7 @@ function UploadCard({ meta }: { meta: SnapshotMeta | null }) {
       <CardHeader
         eyebrow="Carga diaria"
         title="Actualización de datos"
-        subtitle="Sube el CSV de Blip (AgentHistory) y el XLSX de Admin (reporte_solicitudes)"
+        subtitle="Sube el CSV de Blip (AgentHistory) y el XLSX de Admin (reporte_solicitudes). Las cargas se acumulan: meses ya cargados que no aparezcan en el archivo nuevo se preservan."
         right={meta ? <Pill tone="aqua">Cargado · {fechaCorta(meta.generadoEn)}</Pill> : <Pill tone="gold">Sin datos</Pill>}
       />
       {meta && (
@@ -187,6 +188,29 @@ function UploadCard({ meta }: { meta: SnapshotMeta | null }) {
           <div className="text-aqua-800/80">
             Blip: {nf(result.blip.filasLeidas)} filas leídas · Admin: {nf(result.admin.filasLeidas)} filas leídas.
           </div>
+          {result.merge && (
+            <div className="mt-2 pt-2 border-t border-aqua-300/40 text-[12px] space-y-1">
+              <div className="font-semibold text-aqua-800">Resultado del merge con datos previos:</div>
+              {result.merge.mesesNuevos?.length > 0 && (
+                <div>
+                  <span className="text-aqua-700/70">Meses nuevos: </span>
+                  <span className="font-semibold uppercase">{result.merge.mesesNuevos.join(' · ')}</span>
+                </div>
+              )}
+              {result.merge.mesesReemplazados?.length > 0 && (
+                <div>
+                  <span className="text-aqua-700/70">Meses actualizados: </span>
+                  <span className="font-semibold uppercase">{result.merge.mesesReemplazados.join(' · ')}</span>
+                </div>
+              )}
+              {result.merge.mesesPreservados?.length > 0 && (
+                <div>
+                  <span className="text-aqua-700/70">Meses históricos preservados: </span>
+                  <span className="font-semibold uppercase">{result.merge.mesesPreservados.join(' · ')}</span>
+                </div>
+              )}
+            </div>
+          )}
           {Array.isArray(result.warnings) && result.warnings.length > 0 && (
             <ul className="text-gold-700 list-disc pl-5 mt-1.5">
               {result.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}
@@ -324,17 +348,20 @@ function ConfigCard({ config: initial }: { config: ComisionConfig }) {
 
       <div className="grid lg:grid-cols-2 gap-5">
         <div>
-          <p className="eyebrow mb-2">Pilar 1 — AE × multiplicador</p>
+          <p className="eyebrow mb-2">Pilar 1 — % Sol / Cerradas × multiplicador</p>
+          <p className="text-[11px] text-muted2 mb-3">
+            Columnas: <strong>% mín</strong> · <strong>multiplicador</strong> · <strong>piso atenciones</strong> (guardrail, opcional) · <strong>etiqueta</strong>
+          </p>
           {cfg.pilar1.map((t, i) => (
-            <div key={i} className="grid grid-cols-3 gap-2 mb-2">
+            <div key={i} className="grid grid-cols-4 gap-2 mb-2">
               <input
-                type="number" min={0}
+                type="number" min={0} step={0.5}
                 value={t.min}
                 onChange={e => {
                   const next = [...cfg.pilar1]; next[i] = { ...t, min: Number(e.target.value || 0) };
                   setCfg({ ...cfg, pilar1: next });
                 }}
-                placeholder="AE mín"
+                placeholder="% mín"
                 className="input-field font-mono"
               />
               <input
@@ -345,6 +372,18 @@ function ConfigCard({ config: initial }: { config: ComisionConfig }) {
                   setCfg({ ...cfg, pilar1: next });
                 }}
                 placeholder="× multipl."
+                className="input-field font-mono"
+              />
+              <input
+                type="number" min={0} step={100}
+                value={t.pisoAten ?? ''}
+                onChange={e => {
+                  const v = e.target.value;
+                  const next = [...cfg.pilar1];
+                  next[i] = { ...t, pisoAten: v === '' ? undefined : Number(v) };
+                  setCfg({ ...cfg, pilar1: next });
+                }}
+                placeholder="piso aten."
                 className="input-field font-mono"
               />
               <input
@@ -361,17 +400,20 @@ function ConfigCard({ config: initial }: { config: ComisionConfig }) {
           ))}
         </div>
         <div>
-          <p className="eyebrow mb-2">Pilar 2 — % Sol → bono</p>
+          <p className="eyebrow mb-2">Pilar 2 — AE del mes → bono fijo</p>
+          <p className="text-[11px] text-muted2 mb-3">
+            Columnas: <strong>AE mín</strong> · <strong>bono S/</strong> · <strong>etiqueta</strong>
+          </p>
           {cfg.pilar2.map((t, i) => (
             <div key={i} className="grid grid-cols-3 gap-2 mb-2">
               <input
-                type="number" min={0} step={0.5}
+                type="number" min={0} step={1}
                 value={t.min}
                 onChange={e => {
                   const next = [...cfg.pilar2]; next[i] = { ...t, min: Number(e.target.value || 0) };
                   setCfg({ ...cfg, pilar2: next });
                 }}
-                placeholder="% mín"
+                placeholder="AE mín"
                 className="input-field font-mono"
               />
               <input

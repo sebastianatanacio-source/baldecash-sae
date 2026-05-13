@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/session';
-import { saveSnapshot } from '@/lib/storage/snapshot';
+import { loadSnapshot, saveSnapshot } from '@/lib/storage/snapshot';
+import { mergeSnapshots } from '@/lib/parser/merge';
 import type { DataSnapshot } from '@/lib/domain/types';
 
 export const runtime = 'nodejs';
@@ -44,10 +45,17 @@ export async function POST(req: Request) {
   snap.meta.generadoEn = new Date().toISOString();
 
   try {
-    await saveSnapshot(snap);
+    // Mergeamos con el snapshot previo: cada carga conserva los meses
+    // históricos que ya no aparecen en el CSV nuevo (Blip solo entrega
+    // los últimos ~90 días).
+    const prev = await loadSnapshot();
+    const { snapshot: merged, resumen } = mergeSnapshots(prev, snap);
+
+    await saveSnapshot(merged);
     return NextResponse.json({
       ok: true,
-      meta: snap.meta,
+      meta: merged.meta,
+      merge: resumen,
     });
   } catch (err: any) {
     console.error('[upload] error guardando snapshot:', err);

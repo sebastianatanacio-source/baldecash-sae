@@ -1,37 +1,68 @@
 import { esBlipOnly } from './agentes';
 import type { AgenteSlug, ComisionConfig, MetricasMes, TramoP1, TramoP2 } from './types';
 
+// ============================================================
+// Esquema vigente desde mayo 2026 (Fernanda, Stefania, Julio):
+//
+//   Pilar 1 = comisión base (S/ 1,100) × multiplicador del % Sol/Cerradas
+//   Pilar 2 = bono fijo por cantidad de AE del mes
+//   Transferidas no entran al denominador del Pilar 1 (regla SAE).
+//   Guardrail: los tramos 1.50× y 2.00× requieren piso mínimo de
+//   atenciones (campo TramoP1.pisoAten) para activarse.
+// ============================================================
+
 export interface CalculoComision {
   baseSol: number;
-  pilar1: { tramo: TramoP1; aplicado: number };
+  pilar1: { tramo: TramoP1; aplicado: number; capadoPorGuardrail?: boolean };
   pilar2: { tramo: TramoP2; aplicado: number };
   total: number;
 }
 
-export function tramoP1(ae: number, tramos: TramoP1[]): TramoP1 {
+/**
+ * Encuentra el tramo de Pilar 1 que corresponde al % Sol del agente,
+ * aplicando el guardrail de piso de atenciones si está definido en el
+ * tramo. Si `atenForGuardrail` no se pasa, se ignora el piso (modo legacy).
+ */
+export function tramoP1(
+  pctSol: number,
+  tramos: TramoP1[],
+  atenForGuardrail?: number,
+): TramoP1 {
   const ordenados = [...tramos].sort((a, b) => a.min - b.min);
   let actual = ordenados[0];
-  for (const t of ordenados) if (ae >= t.min) actual = t;
+  for (const t of ordenados) {
+    if (pctSol < t.min) break;
+    // Guardrail: si el tramo requiere un piso mínimo de atenciones y la
+    // agente no llega, se queda en el tramo anterior alcanzable.
+    if (
+      atenForGuardrail !== undefined &&
+      t.pisoAten !== undefined &&
+      atenForGuardrail < t.pisoAten
+    ) {
+      break;
+    }
+    actual = t;
+  }
   return actual;
 }
 
-export function tramoP2(pctSol: number, tramos: TramoP2[]): TramoP2 {
+export function tramoP2(aeTot: number, tramos: TramoP2[]): TramoP2 {
   const ordenados = [...tramos].sort((a, b) => a.min - b.min);
   let actual = ordenados[0];
-  for (const t of ordenados) if (pctSol >= t.min) actual = t;
+  for (const t of ordenados) if (aeTot >= t.min) actual = t;
   return actual;
 }
 
 /** Próximo tramo del Pilar 1 que el asesor aún no alcanza, o null si ya está en el máximo. */
-export function proximoTramoP1(ae: number, tramos: TramoP1[]): TramoP1 | null {
+export function proximoTramoP1(pctSol: number, tramos: TramoP1[]): TramoP1 | null {
   const ordenados = [...tramos].sort((a, b) => a.min - b.min);
-  return ordenados.find(t => t.min > ae) ?? null;
+  return ordenados.find(t => t.min > pctSol) ?? null;
 }
 
 /** Próximo tramo del Pilar 2. */
-export function proximoTramoP2(pctSol: number, tramos: TramoP2[]): TramoP2 | null {
+export function proximoTramoP2(aeTot: number, tramos: TramoP2[]): TramoP2 | null {
   const ordenados = [...tramos].sort((a, b) => a.min - b.min);
-  return ordenados.find(t => t.min > pctSol) ?? null;
+  return ordenados.find(t => t.min > aeTot) ?? null;
 }
 
 /**
@@ -46,18 +77,35 @@ export function progresoTramo(actual: number, tramoActual: { min: number }, tram
   return Math.max(0, Math.min(100, (avance / span) * 100));
 }
 
+/**
+ * Cálculo de comisión estándar (Fernanda/Stefania/Julio):
+ *   Pilar 1: pctSol → multiplicador sobre baseSol
+ *   Pilar 2: aeTot → bono fijo
+ *
+ * @param pctSol Tasa de conversión Sol / Cerradas (%)
+ * @param aeTot Aprobadas-entregadas del mes
+ * @param cfg Configuración con tramos y baseSol
+ * @param atenForGuardrail Atenciones del mes (incl. transferidas). Si se pasa,
+ *        activa el guardrail anti-gaming: tramos con pisoAten requieren ese mínimo.
+ */
 export function calcularComision(
-  ae: number,
   pctSol: number,
+  aeTot: number,
   cfg: ComisionConfig,
+  atenForGuardrail?: number,
 ): CalculoComision {
-  const t1 = tramoP1(ae, cfg.pilar1);
-  const t2 = tramoP2(pctSol, cfg.pilar2);
-  const aplicadoP1 = Math.round(cfg.baseSol * t1.mul);
+  const t1Reach = tramoP1(pctSol, cfg.pilar1, atenForGuardrail);
+  const t1NoGuard = tramoP1(pctSol, cfg.pilar1);
+  const t2 = tramoP2(aeTot, cfg.pilar2);
+  const aplicadoP1 = Math.round(cfg.baseSol * t1Reach.mul);
   const aplicadoP2 = t2.bono;
   return {
     baseSol: cfg.baseSol,
-    pilar1: { tramo: t1, aplicado: aplicadoP1 },
+    pilar1: {
+      tramo: t1Reach,
+      aplicado: aplicadoP1,
+      capadoPorGuardrail: t1Reach.min < t1NoGuard.min,
+    },
     pilar2: { tramo: t2, aplicado: aplicadoP2 },
     total: aplicadoP1 + aplicadoP2,
   };
@@ -92,12 +140,17 @@ export function calcularComisionLuz(pctResolucion: number, cfg: ComisionConfig):
 /**
  * Cálculo de comisión por agente. Para Luz devuelve un CalculoLuz simple;
  * para el resto, el cálculo de pilares estándar.
+ *
+ * @param pilar1Valor Para no-Luz: % Sol/Cerradas. Para Luz: se ignora.
+ * @param pilar2Valor Para no-Luz: AE del mes. Para Luz: tasa de resolución.
+ * @param atenForGuardrail Atenciones del mes (no-Luz) para activar guardrail.
  */
 export function calcularComisionPorAgente(
   slug: AgenteSlug,
   pilar1Valor: number,
   pilar2Valor: number,
   cfg: ComisionConfig,
+  atenForGuardrail?: number,
 ): CalculoComision {
   if (esBlipOnly(slug)) {
     // Para Luz, "pilar1Valor" se ignora; "pilar2Valor" es la tasa de resolución
@@ -121,16 +174,7 @@ export function calcularComisionPorAgente(
     };
   }
 
-  const t1 = tramoP1(pilar1Valor, cfg.pilar1);
-  const t2 = tramoP2(pilar2Valor, cfg.pilar2);
-  const aplicadoP1 = Math.round(cfg.baseSol * t1.mul);
-  const aplicadoP2 = t2.bono;
-  return {
-    baseSol: cfg.baseSol,
-    pilar1: { tramo: t1, aplicado: aplicadoP1 },
-    pilar2: { tramo: t2, aplicado: aplicadoP2 },
-    total: aplicadoP1 + aplicadoP2,
-  };
+  return calcularComision(pilar1Valor, pilar2Valor, cfg, atenForGuardrail);
 }
 
 /** Comisión bajo el esquema antiguo: aeCup × S/X + aePre × S/Y. */

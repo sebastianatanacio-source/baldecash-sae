@@ -57,8 +57,9 @@ export function combinarMetricas(metricas: MetricasMes[]): MetricasMes {
     if (m.artAvg > 0) { artSumW += m.artAvg * m.aten; artN += m.aten; }
     if (m.frtMedianaSeg > 0) { frtMedSumW += m.frtMedianaSeg * m.aten; frtMedN += m.aten; }
   }
-  out.pctDeja = out.aten > 0 ? +(out.deja / out.aten * 100).toFixed(1) : 0;
-  out.pctSol  = out.aten > 0 ? +(out.sol  / out.aten * 100).toFixed(1) : 0;
+  // Desde mayo 2026 las transferidas no entran al universo: denominador = cerradas
+  out.pctDeja = out.cerradas > 0 ? +(out.deja / out.cerradas * 100).toFixed(1) : 0;
+  out.pctSol  = out.cerradas > 0 ? +(out.sol  / out.cerradas * 100).toFixed(1) : 0;
   out.qtAvg  = qtN  > 0 ? +(qtSumW  / qtN ).toFixed(2) : 0;
   out.frtAvg = frtN > 0 ? +(frtSumW / frtN).toFixed(2) : 0;
   out.artAvg = artN > 0 ? +(artSumW / artN).toFixed(2) : 0;
@@ -162,44 +163,77 @@ export function basePara(_slug: AgenteSlug, cfg: ComisionConfig): number {
 }
 
 /**
- * Métricas equivalentes al "AE total" y "% Sol/Aten" según el agente.
- * Para Luz: usa "Deja solicitud" y "% Deja/Aten".
- * Para resto: AE total y % Sol/Aten.
+ * Métricas equivalentes a los dos pilares de comisión según el agente.
+ *
+ * Esquema vigente desde mayo 2026 (Fernanda/Stefania/Julio):
+ *   - Pilar 1 = % Sol / Cerradas (la eficiencia maneja el multiplicador)
+ *   - Pilar 2 = AE del mes (volumen entrega bono fijo)
+ *   - Las transferidas no entran al universo del Pilar 1.
+ *
+ * Para Luz mantiene el esquema todo-o-nada:
+ *   - Pilar 1 = consultas solucionadas (count, informativo)
+ *   - Pilar 2 = tasa de resolución (la métrica que cobra)
  */
 export function metricasMeta(slug: AgenteSlug, m: MetricasMes): {
+  /** Valor del Pilar 1 (%Sol para no-Luz, count solucionadas para Luz) */
   pilar1Valor: number;
   pilar1Label: string;
   pilar1Plural: string;
+  pilar1Numerador: number;
+  pilar1Denominador: number;
+  pilar1NumeradorLabel: string;
+  /** true si pilar1 es un ratio (%) — útil para formato y "necesitas X más" */
+  pilar1EsRatio: boolean;
+
   pilar2Valor: number;
   pilar2Label: string;
+  pilar2Plural: string;
   pilar2Numerador: number;
   pilar2Denominador: number;
   pilar2NumeradorLabel: string;
+  pilar2EsRatio: boolean;
 } {
   if (esBlipOnly(slug)) {
     // Luz: Pilar 1 = consultas solucionadas (universo unificado),
-    //      Pilar 2 = % resolución sobre contestadas (guardrail de calidad)
+    //      Pilar 2 = % resolución sobre contestadas (la métrica que cobra)
     const contestadas = Math.max(0, m.cerradas - m.noContesta);
     return {
       pilar1Valor: m.solucionadas,
       pilar1Label: 'consultas solucionadas',
       pilar1Plural: 'consultas solucionadas',
+      pilar1Numerador: m.solucionadas,
+      pilar1Denominador: 0,
+      pilar1NumeradorLabel: 'solucionadas',
+      pilar1EsRatio: false,
+
       pilar2Valor: m.pctResolucion,
       pilar2Label: '% Resolución sobre contestadas',
+      pilar2Plural: 'puntos de resolución',
       pilar2Numerador: m.solucionadas,
       pilar2Denominador: contestadas,
       pilar2NumeradorLabel: 'consultas resueltas',
+      pilar2EsRatio: true,
     };
   }
+  // Esquema general (Fernanda, Stefania, Julio) desde mayo 2026:
+  // Pilar 1 = % Sol / Cerradas (eficiencia → multiplicador)
+  // Pilar 2 = AE del mes      (volumen → bono fijo)
   return {
-    pilar1Valor: m.aeTot,
-    pilar1Label: 'aprobadas-entregadas del mes',
-    pilar1Plural: 'aprobadas-entregadas',
-    pilar2Valor: m.pctSol,
-    pilar2Label: '% Solicitudes / Atenciones',
-    pilar2Numerador: m.sol,
-    pilar2Denominador: m.aten,
-    pilar2NumeradorLabel: 'solicitudes',
+    pilar1Valor: m.pctSol,
+    pilar1Label: '% Solicitudes / Cerradas',
+    pilar1Plural: 'puntos de conversión',
+    pilar1Numerador: m.sol,
+    pilar1Denominador: m.cerradas,
+    pilar1NumeradorLabel: 'solicitudes',
+    pilar1EsRatio: true,
+
+    pilar2Valor: m.aeTot,
+    pilar2Label: 'AE del mes · bono fijo',
+    pilar2Plural: 'aprobadas-entregadas',
+    pilar2Numerador: m.aeTot,
+    pilar2Denominador: 0,
+    pilar2NumeradorLabel: 'AE',
+    pilar2EsRatio: false,
   };
 }
 

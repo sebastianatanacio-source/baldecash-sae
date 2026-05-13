@@ -119,6 +119,10 @@ export function EsquemaComisiones({
     );
   }
 
+  // Esquema vigente desde mayo 2026 para no-Luz:
+  //   Pilar 1 = % Sol / Cerradas → multiplicador (sin guardrail aplicado aquí
+  //             por simplicidad — el guardrail se respeta en el cálculo real)
+  //   Pilar 2 = AE del mes → bono fijo
   const tramoP1Idx = (() => {
     let idx = 0;
     tramos1.forEach((t, i) => { if (pilar1Valor >= t.min) idx = i; });
@@ -131,30 +135,28 @@ export function EsquemaComisiones({
     return idx;
   })();
 
-  const p1Capitalizada = pilar1Etiqueta.charAt(0).toUpperCase() + pilar1Etiqueta.slice(1);
-
   return (
     <Card padding="p-0">
       <div className="px-6 pt-6 pb-4 border-b border-line">
         <CardHeader
-          eyebrow="Esquema vigente"
+          eyebrow="Esquema vigente · mayo 2026"
           title="Cómo se calcula tu comisión"
-          subtitle={`Base mensual del Pilar 1: ${formatSol(baseSol)} · El tramo donde estás ahora aparece resaltado`}
+          subtitle={`Comisión base del Pilar 1: ${formatSol(baseSol)} · El tramo donde estás ahora aparece resaltado`}
         />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-0">
-        {/* PILAR 1 */}
+        {/* PILAR 1 — % Sol / Cerradas → Multiplicador */}
         <div className="p-6 border-b lg:border-b-0 lg:border-r border-line">
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-1">
               <span className="font-display font-bold text-[12px]" style={{ color: agenteColor }}>P1</span>
-              <h4 className="font-display font-semibold text-[14px] text-ink">{p1Capitalizada} × Multiplicador</h4>
+              <h4 className="font-display font-semibold text-[14px] text-ink">% Sol / Cerradas × Multiplicador</h4>
             </div>
             <p className="text-[11.5px] text-muted">
-              {blipOnly
-                ? `Sumamos todos los chats que tipificaste dentro del universo unificado de "consultas solucionadas" (esquema histórico + esquema nuevo desde el 15-abr-2026) y aplicamos el multiplicador del tramo a la base de ${formatSol(baseSol)}. Meta mensual: 1,100 solucionadas.`
-                : `Sumamos todas tus aprobadas-entregadas del mes (cupón + preowner) y aplicamos el multiplicador del tramo a la base de ${formatSol(baseSol)}.`}
+              Calculamos el porcentaje de solicitudes que ingresaste (con tu cupón) sobre las conversaciones cerradas
+              por ti del mes (las transferidas no entran). Cada tramo activa un multiplicador sobre la base de {formatSol(baseSol)}.
+              Tramos altos requieren un piso mínimo de atenciones (guardrail anti-gaming).
             </p>
           </div>
           <div className="space-y-1.5">
@@ -186,7 +188,10 @@ export function EsquemaComisiones({
                         {t.label}
                       </div>
                       <div className="text-[10.5px] text-muted">
-                        Multiplicador {t.mul}× sobre {formatSol(baseSol)}
+                        {t.mul === 0
+                          ? 'Sin comisión este mes'
+                          : `Multiplicador ${t.mul}× sobre ${formatSol(baseSol)}`}
+                        {t.pisoAten ? ` · requiere ≥${t.pisoAten.toLocaleString('es-PE')} aten.` : ''}
                       </div>
                     </div>
                   </div>
@@ -206,19 +211,16 @@ export function EsquemaComisiones({
           </div>
         </div>
 
-        {/* PILAR 2 */}
+        {/* PILAR 2 — AE del mes → Bono fijo */}
         <div className="p-6">
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-1">
               <span className="font-display font-bold text-[12px] text-gold-600">P2</span>
-              <h4 className="font-display font-semibold text-[14px] text-ink">
-                {blipOnly ? 'Tasa de resolución · Guardrail de calidad' : '% Solicitudes / Atenciones → Bono'}
-              </h4>
+              <h4 className="font-display font-semibold text-[14px] text-ink">AE del mes → Bono fijo</h4>
             </div>
             <p className="text-[11.5px] text-muted">
-              {blipOnly
-                ? 'Para cobrar el Pilar 1 tu tasa de resolución sobre contestadas debe ser ≥ 60%. La FRT mediana también debe estar ≤ 30 segundos. Si pasa el guardrail, además recibes el bono de la tabla.'
-                : 'Bono adicional según el porcentaje de solicitudes ingresadas (con tu cupón) sobre las atenciones de Blip.'}
+              Bono adicional según la cantidad de aprobadas-entregadas (cupón + preowner) del mes. Es complemento al Pilar 1
+              y se suma directo a la comisión final.
             </p>
           </div>
           <div className="space-y-1.5">
@@ -247,7 +249,7 @@ export function EsquemaComisiones({
                     <div>
                       <div className="font-semibold text-[12.5px] text-ink">{t.label}</div>
                       <div className="text-[10.5px] text-muted">
-                        {t.bono === 0 ? 'Sin bono' : i === tramos2.length - 1 ? 'Bono máximo' : i === 1 ? 'Bono básico' : 'Bono medio'}
+                        {t.bono === 0 ? 'Sin bono' : i === tramos2.length - 1 ? 'Bono máximo' : 'Bono progresivo'}
                       </div>
                     </div>
                   </div>
@@ -269,7 +271,7 @@ export function EsquemaComisiones({
       </div>
 
       <div className="px-6 py-4 border-t border-line bg-bg/40 text-[12px] text-muted2 text-center">
-        <strong className="text-ink2">Comisión final</strong> = Base × Multiplicador (Pilar 1) + Bono (Pilar 2)
+        <strong className="text-ink2">Comisión final</strong> = Base × Multiplicador (% Sol/Cerradas) + Bono (AE del mes)
       </div>
     </Card>
   );

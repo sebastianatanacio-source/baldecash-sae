@@ -73,9 +73,16 @@ export default function ResumenView({
         <ChipGroup options={chipOptions} value={mes} onChange={setMes} />
       </header>
 
-      {/* ============== PROGRESO DEL EQUIPO — MES ACTUAL ============== */}
+      {/* ============== PROGRESO DEL EQUIPO ============== */}
+      {/* Respeta el filtro de chips: si está en 'Período completo', usa el mes
+          más reciente; si la jefa/admin elige un mes, las tarjetas también
+          se actualizan a ese mes. */}
       {mesPorDefecto && (
-        <ProgresoEquipo snapshot={snapshot} mes={mesPorDefecto} config={config} />
+        <ProgresoEquipo
+          snapshot={snapshot}
+          mes={mes === 'all' ? mesPorDefecto : (mes as MesKey)}
+          config={config}
+        />
       )}
 
       {/* ============== KPIs HERO ============== */}
@@ -105,12 +112,12 @@ export default function ResumenView({
           hint={`Cupón ${nf(equipo.aeCup)} · Preowner ${nf(equipo.aePre)}`}
         />
         <Kpi
-          label="Conversión Sol / Aten"
+          label="Conversión Sol / Cerradas"
           value={pct(equipo.pctSol, 1)}
           accent="#151744"
           size="lg"
           delta={equipoPrev ? { value: +((equipo.pctSol - equipoPrev.pctSol).toFixed(1)), positiveIsGood: true } : undefined}
-          hint="Proxy de productividad para el Pilar 2"
+          hint="Métrica que maneja el multiplicador del Pilar 1 (transferidas excluidas)"
         />
       </section>
 
@@ -179,6 +186,9 @@ export default function ResumenView({
           </div>
         </Card>
       </section>
+
+      {/* ============== UNIVERSO SAE · LUZ ============== */}
+      <UniversoSAE snapshot={snapshot} config={config} mes={mes} />
 
       {/* ============== REPARTO POR ASESORA ============== */}
       <Card>
@@ -328,6 +338,72 @@ function TablaResumen({ snapshot }: { snapshot: DataSnapshot }) {
 }
 
 // ============================================================
+// UNIVERSO SAE · LUZ — KPIs específicos del esquema todo-o-nada
+// ============================================================
+function UniversoSAE({
+  snapshot, config, mes,
+}: { snapshot: DataSnapshot; config: ComisionConfig; mes: MesFiltro }) {
+  if (!snapshot.agentes.luz) return null;
+  const m = metricasAgente(snapshot, 'luz', mes);
+  if (m.aten === 0 && m.cerradas === 0) return null;
+
+  const ef = metricasLuzEfectivas(m, config);
+  const luzCom = calcularComisionLuz(ef.pctResolucion, config);
+
+  const meses = snapshot.meta.meses;
+  const luzPorMes = meses.map(mk =>
+    metricasLuzEfectivas(metricasAgente(snapshot, 'luz', mk), config),
+  );
+
+  return (
+    <Card>
+      <CardHeader
+        eyebrow="Universo SAE · Luz"
+        title="Atención SAE y tasa de resolución"
+        subtitle="Tipificaciones que cuentan como solucionada sobre las contestadas (esquema todo-o-nada)"
+        right={
+          <Pill tone={luzCom.cumple ? 'aqua' : 'gold'}>
+            {ef.pctResolucion.toFixed(1)}% / {luzCom.umbralPct}%
+          </Pill>
+        }
+      />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+        <KpiCompact label="Atenciones" value={nf(m.aten)} accent="#6873D7" />
+        <KpiCompact label="Cerradas por Luz" value={nf(m.cerradas)} accent="#4453A0" />
+        <KpiCompact label="Solucionadas" value={nf(ef.solucionadas)} accent="#00A29B" />
+        <KpiCompact label="No contesta" value={nf(ef.noContesta)} accent="#D1A646" />
+        <KpiCompact label="Contestadas" value={nf(ef.contestadas)} accent="#36B7B3" />
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
+        <KpiCompact
+          label="Tasa de resolución"
+          value={pct(ef.pctResolucion, 1)}
+          accent={ef.pctResolucion >= luzCom.umbralPct ? '#00A29B' : '#D1A646'}
+        />
+        <KpiCompact label="Transferidas" value={nf(m.transferidas)} accent="#98A9DF" />
+        <KpiCompact
+          label={luzCom.cumple ? 'Comisión (cumple umbral)' : 'Comisión (no cumple)'}
+          value={formatSol(luzCom.total)}
+          accent={luzCom.cumple ? '#00A29B' : '#D1A646'}
+        />
+      </div>
+      <div className="border-t border-line pt-5">
+        <p className="eyebrow mb-3">Solucionadas vs contestadas por mes</p>
+        <BarChart
+          labels={meses.map(mk => MES_LABEL_CORTO[mk])}
+          series={[
+            { label: 'Contestadas',  data: luzPorMes.map(x => x.contestadas),  color: '#6873D7' },
+            { label: 'Solucionadas', data: luzPorMes.map(x => x.solucionadas), color: '#00A29B' },
+          ]}
+          legend
+          height={200}
+        />
+      </div>
+    </Card>
+  );
+}
+
+// ============================================================
 // PROGRESO DEL EQUIPO — sección "Cómo van las chicas este mes"
 // ============================================================
 function ProgresoEquipo({
@@ -371,7 +447,7 @@ function TarjetaAsesora({
   const tramos1 = tramosP1Para(spec.slug, config);
   const tramos2 = tramosP2Para(spec.slug, config);
 
-  const t1Actual = tramoP1(meta.pilar1Valor, tramos1);
+  const t1Actual = tramoP1(meta.pilar1Valor, tramos1, m.aten);
   const t1Sig = proximoTramoP1(meta.pilar1Valor, tramos1);
   const t2Actual = tramoP2(meta.pilar2Valor, tramos2);
   const t2Sig = proximoTramoP2(meta.pilar2Valor, tramos2);
@@ -379,19 +455,22 @@ function TarjetaAsesora({
   const progP1 = progresoTramo(meta.pilar1Valor, t1Actual, t1Sig);
   const progP2 = progresoTramo(meta.pilar2Valor, t2Actual, t2Sig);
 
-  const com = calcularComisionPorAgente(spec.slug, meta.pilar1Valor, meta.pilar2Valor, config);
+  const com = calcularComisionPorAgente(spec.slug, meta.pilar1Valor, meta.pilar2Valor, config, m.aten);
 
-  // Proyección a cierre
+  // Proyección a cierre — Pilar 1 es %Sol/Cerradas (ratio), Pilar 2 es AE (count)
   const dias = diasTrabajados(snapshot, spec.slug, mes);
   const total = diasTotalesDelMes(mes);
-  const v1Proy = dias > 0 ? proyectarFinDeMes(meta.pilar1Valor, dias, total) : meta.pilar1Valor;
   const atenProy = dias > 0 ? proyectarFinDeMes(m.aten, dias, total) : m.aten;
-  const numProy = dias > 0 ? proyectarFinDeMes(meta.pilar2Numerador, dias, total) : meta.pilar2Numerador;
-  const v2Proy = atenProy > 0 ? +(numProy / atenProy * 100).toFixed(1) : 0;
-  const comProy = calcularComisionPorAgente(spec.slug, v1Proy, v2Proy, config).total;
+  const cerradasProy = dias > 0 ? proyectarFinDeMes(meta.pilar1Denominador, dias, total) : meta.pilar1Denominador;
+  const solProy = dias > 0 ? proyectarFinDeMes(meta.pilar1Numerador, dias, total) : meta.pilar1Numerador;
+  const v1Proy = cerradasProy > 0 ? +(solProy / cerradasProy * 100).toFixed(1) : 0;
+  const v2Proy = dias > 0 ? proyectarFinDeMes(meta.pilar2Valor, dias, total) : meta.pilar2Valor;
+  const comProy = calcularComisionPorAgente(spec.slug, v1Proy, v2Proy, config, atenProy).total;
 
-  const faltanP1 = t1Sig ? Math.max(0, t1Sig.min - meta.pilar1Valor) : 0;
-  const faltanNum = t2Sig ? solicitudesParaPct(meta.pilar2Numerador, meta.pilar2Denominador, t2Sig.min) : 0;
+  // Faltantes Pilar 1: cuántas solicitudes más necesita (manteniendo denom constante)
+  const faltanSolP1 = t1Sig ? solicitudesParaPct(meta.pilar1Numerador, meta.pilar1Denominador, t1Sig.min) : 0;
+  // Faltantes Pilar 2: diferencia simple en AE
+  const faltanAEP2 = t2Sig ? Math.max(0, t2Sig.min - meta.pilar2Valor) : 0;
 
   return (
     <div className="card-surface p-6">
@@ -417,21 +496,21 @@ function TarjetaAsesora({
         </div>
       </div>
 
-      {/* PILAR 1 */}
+      {/* PILAR 1 — % Sol/Cerradas → multiplicador */}
       <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <span className="text-[10.5px] uppercase tracking-[0.12em] font-bold" style={{ color: spec.color }}>P1</span>
-            <span className="text-[12px] font-semibold text-ink capitalize">{meta.pilar1Plural}</span>
+            <span className="text-[12px] font-semibold text-ink">% Sol / Cerradas</span>
           </div>
           <div className="flex items-center gap-2 text-[12px]">
-            <span className="font-display font-semibold tabular text-ink">{meta.pilar1Valor}</span>
-            {t1Sig && <span className="text-muted2 tabular">/ {t1Sig.min}</span>}
+            <span className="font-display font-semibold tabular text-ink">{meta.pilar1Valor.toFixed(1)}%</span>
+            {t1Sig && <span className="text-muted2 tabular">/ {t1Sig.min}%</span>}
             <span
               className="px-2 py-0.5 rounded-md text-[10px] font-bold"
               style={{ background: spec.colorSoft, color: spec.color }}
             >
-              {t1Actual.mul}×
+              {t1Actual.mul === 0 ? 'sin com.' : `${t1Actual.mul}×`}
             </span>
           </div>
         </div>
@@ -442,10 +521,10 @@ function TarjetaAsesora({
           />
         </div>
         <div className="flex items-center justify-between mt-1.5 text-[10.5px]">
-          <span className="text-muted2">Cierre proyectado: <strong className="text-ink2 tabular">{v1Proy} {blipOnly ? 'deja-sol' : 'A-E'}</strong></span>
+          <span className="text-muted2">Cierre proyectado: <strong className="text-ink2 tabular">{v1Proy.toFixed(1)}%</strong></span>
           {t1Sig ? (
             <span className="font-semibold" style={{ color: spec.color }}>
-              Faltan {faltanP1} para {t1Sig.mul}×
+              {faltanSolP1 > 0 ? `${faltanSolP1} sol más → ${t1Sig.mul}×` : `${(t1Sig.min - meta.pilar1Valor).toFixed(1)} pp → ${t1Sig.mul}×`}
             </span>
           ) : (
             <span className="font-semibold text-aqua-700">Tramo máximo</span>
@@ -453,16 +532,16 @@ function TarjetaAsesora({
         </div>
       </div>
 
-      {/* PILAR 2 */}
+      {/* PILAR 2 — AE del mes → bono fijo */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <span className="text-[10.5px] uppercase tracking-[0.12em] font-bold text-gold-600">P2</span>
-            <span className="text-[12px] font-semibold text-ink">{blipOnly ? '% Deja / Aten' : '% Sol / Aten'}</span>
+            <span className="text-[12px] font-semibold text-ink">AE del mes</span>
           </div>
           <div className="flex items-center gap-2 text-[12px]">
-            <span className="font-display font-semibold tabular text-ink">{meta.pilar2Valor.toFixed(1)}%</span>
-            {t2Sig && <span className="text-muted2 tabular">/ {t2Sig.min}%</span>}
+            <span className="font-display font-semibold tabular text-ink">{nf(meta.pilar2Valor)}</span>
+            {t2Sig && <span className="text-muted2 tabular">/ {t2Sig.min} AE</span>}
             <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-gold-100 text-gold-700">
               {com.pilar2.aplicado === 0 ? 'sin bono' : `+${formatSol(com.pilar2.aplicado)}`}
             </span>
@@ -475,10 +554,10 @@ function TarjetaAsesora({
           />
         </div>
         <div className="flex items-center justify-between mt-1.5 text-[10.5px]">
-          <span className="text-muted2">Cierre proyectado: <strong className="text-ink2 tabular">{v2Proy.toFixed(1)}%</strong></span>
+          <span className="text-muted2">Cierre proyectado: <strong className="text-ink2 tabular">{nf(v2Proy)} A-E</strong></span>
           {t2Sig ? (
             <span className="font-semibold text-gold-700">
-              {faltanNum > 0 ? `${faltanNum} ${meta.pilar2NumeradorLabel} más para ${t2Sig.min}%` : `${(t2Sig.min - meta.pilar2Valor).toFixed(1)} pp para subir`}
+              {faltanAEP2} A-E más para {t2Sig.label}
             </span>
           ) : (
             <span className="font-semibold text-aqua-700">Tramo máximo</span>

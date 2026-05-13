@@ -71,8 +71,17 @@ export async function buildSnapshot(input: BuildSnapshotInput): Promise<BuildSna
       const aeCup = a?.aeCup ?? 0;
       const aePre = a?.aePre ?? 0;
       const aeTot = aeCup + aePre;
-      const pctDeja = aten > 0 ? +(deja / aten * 100).toFixed(1) : 0;
-      const pctSol  = aten > 0 ? +(sol  / aten * 100).toFixed(1) : 0;
+
+      const cerradas    = b?.cerradas    ?? 0;
+      const solucionadas = b?.solucionadas ?? 0;
+      const noContesta   = b?.noContesta   ?? 0;
+      const transferidas = b?.transferidas ?? 0;
+
+      // pctDeja: % deja-solicitud sobre cerradas (transferidas fuera del universo, regla SAE desde mayo 2026)
+      const pctDeja = cerradas > 0 ? +(deja / cerradas * 100).toFixed(1) : 0;
+      // pctSol: % solicitudes ingresadas sobre cerradas — métrica clave del Pilar 1 desde mayo 2026
+      // (antes era sobre aten que incluía transferidas; ahora se excluyen porque no son trabajo efectivo)
+      const pctSol  = cerradas > 0 ? +(sol  / cerradas * 100).toFixed(1) : 0;
 
       const qtAvg  = b && b.qtN  > 0 ? +(b.qtSum  / b.qtN ).toFixed(2) : 0;
       const frtAvg = b && b.frtN > 0 ? +(b.frtSum / b.frtN).toFixed(2) : 0;
@@ -87,11 +96,6 @@ export async function buildSnapshot(input: BuildSnapshotInput): Promise<BuildSna
             .sort((x, y) => y[1] - x[1])
             .map(([tag, n]) => ({ tag, n }))
         : [];
-
-      const cerradas    = b?.cerradas    ?? 0;
-      const solucionadas = b?.solucionadas ?? 0;
-      const noContesta   = b?.noContesta   ?? 0;
-      const transferidas = b?.transferidas ?? 0;
       // % Resolución sobre contestadas: contestadas = cerradas - noContesta
       const contestadas = Math.max(0, cerradas - noContesta);
       const pctResolucion = contestadas > 0 ? +(solucionadas / contestadas * 100).toFixed(1) : 0;

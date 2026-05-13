@@ -15,13 +15,14 @@ export default function MetasView({ snapshot, config }: { snapshot: DataSnapshot
   return (
     <div className="space-y-7">
       <header>
-        <p className="eyebrow mb-2">Comisiones · Nuevo esquema</p>
+        <p className="eyebrow mb-2">Comisiones · Esquema vigente mayo 2026</p>
         <h1 className="font-display text-[28px] font-semibold leading-tight text-ink">
           Pilares y simulador de comisiones
         </h1>
         <p className="text-[13.5px] text-muted mt-2 max-w-3xl">
-          Estructura de doble pilar que premia volumen de aprobaciones y productividad sobre las atenciones del canal.
-          Los tramos por defecto son configurables desde el panel de administración.
+          Estructura de doble pilar donde la <strong className="text-ink">conversión</strong> (% Sol/Cerradas) maneja el multiplicador del Pilar 1
+          y el <strong className="text-ink">volumen de AE</strong> entrega un bono fijo en el Pilar 2. Las transferidas no entran al universo del Pilar 1.
+          Los tramos son configurables desde el panel de administración.
         </p>
       </header>
 
@@ -29,19 +30,19 @@ export default function MetasView({ snapshot, config }: { snapshot: DataSnapshot
       <section className="grid lg:grid-cols-2 gap-5">
         <PilarCard
           numero="Pilar 1"
-          titulo="AE del mes × multiplicador"
-          subtitulo="AE = cupón + preowner. Fuente: Admin"
+          titulo="% Sol / Cerradas × multiplicador"
+          subtitulo="Sol Admin (cupón) ÷ cerradas Blip (excluye transferidas)"
           tone="aqua"
           tramos={config.pilar1.map(t => ({
             label: t.label,
-            valor: `${t.mul.toFixed(2)}×`,
-            sub: `Base × ${t.mul}`,
+            valor: t.mul === 0 ? 'S/ 0' : `${t.mul.toFixed(2)}×`,
+            sub: t.mul === 0 ? 'sin comisión' : (t.pisoAten ? `Base × ${t.mul} · piso ≥${t.pisoAten} aten.` : `Base × ${t.mul}`),
           }))}
         />
         <PilarCard
           numero="Pilar 2"
-          titulo="% Sol / Atenciones → bono"
-          subtitulo="Sol Admin (cupón) ÷ atenciones Blip"
+          titulo="AE del mes → bono fijo"
+          subtitulo="Aprobadas-entregadas del mes (cupón + preowner)"
           tone="gold"
           tramos={config.pilar2.map(t => ({
             label: t.label,
@@ -55,22 +56,24 @@ export default function MetasView({ snapshot, config }: { snapshot: DataSnapshot
         <CardHeader
           eyebrow="Fórmula"
           title="Cálculo de la comisión final"
-          subtitle="Comisión = Base mensual × Multiplicador del Pilar 1 + Bono del Pilar 2"
+          subtitle="Comisión = Comisión base × Multiplicador (% Sol/Cerradas) + Bono (AE del mes)"
         />
         <div
           className="rounded-xl p-6 text-white grid sm:grid-cols-3 gap-4 text-center"
           style={{ background: 'linear-gradient(135deg, #151744, #31359C)' }}
         >
           <div>
-            <p className="text-[10.5px] uppercase tracking-[0.14em] text-blue-200/80 mb-1.5">Base mensual</p>
+            <p className="text-[10.5px] uppercase tracking-[0.14em] text-blue-200/80 mb-1.5">Comisión base</p>
             <div className="font-display text-[24px] font-semibold tabular">{formatSol(config.baseSol)}</div>
           </div>
           <div className="border-t sm:border-t-0 sm:border-l sm:border-r border-blue-300/20 pt-4 sm:pt-0">
-            <p className="text-[10.5px] uppercase tracking-[0.14em] text-blue-200/80 mb-1.5">Multiplicador (P1)</p>
-            <div className="font-display text-[24px] font-semibold tabular">1.0× – 2.0×</div>
+            <p className="text-[10.5px] uppercase tracking-[0.14em] text-blue-200/80 mb-1.5">Multiplicador P1 (% Sol)</p>
+            <div className="font-display text-[24px] font-semibold tabular">
+              {Math.min(...config.pilar1.map(t => t.mul)).toFixed(1)}× – {Math.max(...config.pilar1.map(t => t.mul)).toFixed(1)}×
+            </div>
           </div>
           <div className="border-t sm:border-t-0 border-blue-300/20 pt-4 sm:pt-0">
-            <p className="text-[10.5px] uppercase tracking-[0.14em] text-blue-200/80 mb-1.5">Bono (P2)</p>
+            <p className="text-[10.5px] uppercase tracking-[0.14em] text-blue-200/80 mb-1.5">Bono P2 (AE)</p>
             <div className="font-display text-[24px] font-semibold tabular">
               S/ 0 – {formatSol(Math.max(...config.pilar2.map(t => t.bono)))}
             </div>
@@ -83,7 +86,7 @@ export default function MetasView({ snapshot, config }: { snapshot: DataSnapshot
         <CardHeader
           eyebrow="Simulador"
           title="Calculadora de comisión"
-          subtitle="Ajusta AE y % Sol/Atenciones para proyectar la comisión de cada asesora"
+          subtitle="Ajusta % Sol/Cerradas, AE y atenciones (para el guardrail) para proyectar la comisión de cada asesora"
         />
         <Calculadora snapshot={snapshot} config={config} />
       </Card>
@@ -186,9 +189,15 @@ function Calculadora({ snapshot, config }: { snapshot: DataSnapshot; config: Com
               spec={spec}
               base={base}
               config={config}
-              defaultAE={ag.meses[ult]?.aeTot ?? 0}
               defaultPct={ag.meses[ult]?.pctSol ?? 0}
-              historico={meses.map(m => ({ mes: MES_LABEL_CORTO[m], ae: ag.meses[m]!.aeTot, pct: ag.meses[m]!.pctSol }))}
+              defaultAE={ag.meses[ult]?.aeTot ?? 0}
+              defaultAten={ag.meses[ult]?.aten ?? 0}
+              historico={meses.map(m => ({
+                mes: MES_LABEL_CORTO[m],
+                pct: ag.meses[m]!.pctSol,
+                ae: ag.meses[m]!.aeTot,
+                aten: ag.meses[m]!.aten,
+              }))}
             />
           );
         })}
@@ -198,20 +207,24 @@ function Calculadora({ snapshot, config }: { snapshot: DataSnapshot; config: Com
 }
 
 function CalculadoraAgente({
-  spec, base, config, defaultAE, defaultPct, historico,
+  spec, base, config, defaultPct, defaultAE, defaultAten, historico,
 }: {
   spec: { slug: string; nombre: string; cupon: string; initials: string; color: string };
   base: number;
   config: ComisionConfig;
-  defaultAE: number;
   defaultPct: number;
-  historico: { mes: string; ae: number; pct: number }[];
+  defaultAE: number;
+  defaultAten: number;
+  historico: { mes: string; pct: number; ae: number; aten: number }[];
 }) {
-  const [ae, setAE] = useState<number>(defaultAE);
   const [pctSol, setPctSol] = useState<number>(defaultPct);
+  const [ae, setAE] = useState<number>(defaultAE);
+  const [aten, setAten] = useState<number>(defaultAten);
 
-  const calculo = useMemo(() => calcularComision(ae, pctSol, { ...config, baseSol: base }),
-    [ae, pctSol, base, config]);
+  const calculo = useMemo(
+    () => calcularComision(pctSol, ae, { ...config, baseSol: base }, aten),
+    [pctSol, ae, aten, base, config],
+  );
 
   return (
     <div className="border-2 rounded-2xl p-5" style={{ borderColor: spec.color }}>
@@ -230,34 +243,7 @@ function CalculadoraAgente({
 
       <div className="space-y-4 mb-5">
         <div>
-          <label className="eyebrow block mb-1.5">AE del mes</label>
-          <input
-            type="number"
-            min={0}
-            value={ae}
-            onChange={e => setAE(Math.max(0, Number(e.target.value || 0)))}
-            className="input-field font-display text-[18px] font-semibold tabular"
-          />
-          {historico.length > 0 && (
-            <p className="text-[11px] text-muted2 mt-1.5">
-              Histórico:{' '}
-              {historico.map((h, i) => (
-                <span key={h.mes}>
-                  {i > 0 && ' · '}
-                  <button
-                    type="button"
-                    onClick={() => setAE(h.ae)}
-                    className="text-blue-500 hover:text-blue-700 hover:underline"
-                  >
-                    {h.mes} <strong>{h.ae}</strong>
-                  </button>
-                </span>
-              ))}
-            </p>
-          )}
-        </div>
-        <div>
-          <label className="eyebrow block mb-1.5">% Sol / Atenciones</label>
+          <label className="eyebrow block mb-1.5">% Sol / Cerradas · maneja multiplicador P1</label>
           <input
             type="number"
             min={0}
@@ -285,6 +271,60 @@ function CalculadoraAgente({
             </p>
           )}
         </div>
+        <div>
+          <label className="eyebrow block mb-1.5">AE del mes · maneja bono P2</label>
+          <input
+            type="number"
+            min={0}
+            value={ae}
+            onChange={e => setAE(Math.max(0, Number(e.target.value || 0)))}
+            className="input-field font-display text-[18px] font-semibold tabular"
+          />
+          {historico.length > 0 && (
+            <p className="text-[11px] text-muted2 mt-1.5">
+              Histórico:{' '}
+              {historico.map((h, i) => (
+                <span key={h.mes}>
+                  {i > 0 && ' · '}
+                  <button
+                    type="button"
+                    onClick={() => setAE(h.ae)}
+                    className="text-blue-500 hover:text-blue-700 hover:underline"
+                  >
+                    {h.mes} <strong>{h.ae}</strong>
+                  </button>
+                </span>
+              ))}
+            </p>
+          )}
+        </div>
+        <div>
+          <label className="eyebrow block mb-1.5">Atenciones · guardrail para multiplicadores altos</label>
+          <input
+            type="number"
+            min={0}
+            value={aten}
+            onChange={e => setAten(Math.max(0, Number(e.target.value || 0)))}
+            className="input-field font-display text-[18px] font-semibold tabular"
+          />
+          {historico.length > 0 && (
+            <p className="text-[11px] text-muted2 mt-1.5">
+              Histórico:{' '}
+              {historico.map((h, i) => (
+                <span key={h.mes}>
+                  {i > 0 && ' · '}
+                  <button
+                    type="button"
+                    onClick={() => setAten(h.aten)}
+                    className="text-blue-500 hover:text-blue-700 hover:underline"
+                  >
+                    {h.mes} <strong>{h.aten.toLocaleString('es-PE')}</strong>
+                  </button>
+                </span>
+              ))}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="rounded-xl p-4 text-white" style={{ background: '#151744' }}>
@@ -292,11 +332,16 @@ function CalculadoraAgente({
         <div className="font-display text-[30px] font-semibold tabular leading-none">{formatSol(calculo.total)}</div>
         <div className="flex flex-wrap gap-2 mt-3">
           <Pill tone="aqua" className="!bg-aqua-600/15 !border-aqua-500/30 !text-aqua-200">
-            P1: {formatSol(calculo.pilar1.aplicado)} · {calculo.pilar1.tramo.mul}×
+            P1: {formatSol(calculo.pilar1.aplicado)} · {calculo.pilar1.tramo.mul === 0 ? 'sin com.' : `${calculo.pilar1.tramo.mul}×`}
           </Pill>
           <Pill tone="gold" className="!bg-gold-500/15 !border-gold-400/30 !text-gold-200">
             P2: {calculo.pilar2.aplicado === 0 ? 'sin bono' : `+${formatSol(calculo.pilar2.aplicado)}`}
           </Pill>
+          {calculo.pilar1.capadoPorGuardrail && (
+            <Pill tone="gold" className="!bg-bad/20 !border-bad/40 !text-gold-200">
+              Multiplicador capado por guardrail (atenciones &lt; piso)
+            </Pill>
+          )}
         </div>
       </div>
     </div>
@@ -310,7 +355,8 @@ function HistoricoUltimoMes({ snapshot, config }: { snapshot: DataSnapshot; conf
     .map(spec => {
       const m = snapshot.agentes[spec.slug]!.meses[ult];
       if (!m) return null;
-      const c = calcularComision(m.aeTot, m.pctSol, config);
+      // Esquema mayo 2026: pctSol → multiplicador, aeTot → bono, aten para guardrail
+      const c = calcularComision(m.pctSol, m.aeTot, config, m.aten);
       return { spec, m, c };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -321,9 +367,10 @@ function HistoricoUltimoMes({ snapshot, config }: { snapshot: DataSnapshot; conf
         <thead>
           <tr className="text-left text-muted">
             <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Asesora</th>
+            <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">% Sol/Cerr.</th>
+            <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Aten.</th>
             <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">AE</th>
-            <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">% Sol</th>
-            <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Multiplicador</th>
+            <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Mult. P1</th>
             <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Pilar 1</th>
             <th className="px-3 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Pilar 2</th>
             <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right">Total</th>
@@ -338,9 +385,13 @@ function HistoricoUltimoMes({ snapshot, config }: { snapshot: DataSnapshot; conf
                   <span className="font-semibold text-ink">{spec.nombre}</span>
                 </div>
               </td>
-              <td className="px-3 py-3 text-right tabular">{m.aeTot}</td>
               <td className="px-3 py-3 text-right tabular text-muted">{m.pctSol.toFixed(1)}%</td>
-              <td className="px-3 py-3 text-right tabular">{c.pilar1.tramo.mul}×</td>
+              <td className="px-3 py-3 text-right tabular text-muted">{m.aten.toLocaleString('es-PE')}</td>
+              <td className="px-3 py-3 text-right tabular">{m.aeTot}</td>
+              <td className="px-3 py-3 text-right tabular">
+                {c.pilar1.tramo.mul === 0 ? '—' : `${c.pilar1.tramo.mul}×`}
+                {c.pilar1.capadoPorGuardrail && <span className="text-bad ml-1" title="Capado por guardrail">✱</span>}
+              </td>
               <td className="px-3 py-3 text-right tabular">{formatSol(c.pilar1.aplicado)}</td>
               <td className="px-3 py-3 text-right tabular">{formatSol(c.pilar2.aplicado)}</td>
               <td className="px-4 py-3 text-right">

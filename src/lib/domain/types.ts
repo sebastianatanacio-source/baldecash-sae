@@ -108,16 +108,22 @@ export interface DataSnapshot {
 // ============== Configuración de comisiones (Pilar 1 / Pilar 2) ==============
 
 export interface TramoP1 {
-  /** AE mínimo para entrar al tramo (inclusive) */
+  /** %Sol/Cerradas mínimo para entrar al tramo (inclusive) — desde mayo 2026 */
   min: number;
-  /** Multiplicador sobre la base */
+  /** Multiplicador sobre la comisión base */
   mul: number;
   /** Etiqueta humana */
   label: string;
+  /**
+   * Piso de atenciones del mes para activar este tramo (guardrail anti-gaming).
+   * Si está definido y la agente tiene menos atenciones que esto, no puede
+   * acceder a este multiplicador y queda en el tramo anterior. Opcional.
+   */
+  pisoAten?: number;
 }
 
 export interface TramoP2 {
-  /** %Sol/Aten mínimo para entrar al tramo (inclusive) */
+  /** AE mínimo del mes para entrar al tramo (inclusive) — desde mayo 2026 */
   min: number;
   /** Bono fijo en Soles */
   bono: number;
@@ -176,17 +182,24 @@ export interface ComisionConfig {
 
 export const DEFAULT_CONFIG: ComisionConfig = {
   baseSol: 1100,
+  // Esquema desde mayo 2026: el % Sol/Cerradas maneja el multiplicador
+  // (la eficiencia premia). Transferidas no entran al denominador (regla SAE).
+  // Guardrail #1: los tramos 1.50× y 2.00× requieren piso mínimo de atenciones.
   pilar1: [
-    { min: 0,  mul: 1.0,  label: '1 – 29 AE' },
-    { min: 30, mul: 1.25, label: '30 – 44 AE' },
-    { min: 45, mul: 1.5,  label: '45 – 59 AE' },
-    { min: 60, mul: 2.0,  label: '60+ AE' },
+    { min: 0,   mul: 0,    label: '0% – 4.9%' },
+    { min: 5,   mul: 1.0,  label: '5% – 5.9%' },
+    { min: 6,   mul: 1.25, label: '6% – 7.5%' },
+    { min: 7.6, mul: 1.5,  label: '7.6% – 8.9%', pisoAten: 1200 },
+    { min: 9,   mul: 2.0,  label: '9% o más',    pisoAten: 1800 },
   ],
+  // Pilar 2 ahora premia volumen como bono fijo: las AE del mes.
   pilar2: [
-    { min: 0,  bono: 0,   label: 'Menos de 5%' },
-    { min: 5,  bono: 100, label: '5% – 7.9%' },
-    { min: 8,  bono: 300, label: '8% – 10.9%' },
-    { min: 11, bono: 500, label: '11% o más' },
+    { min: 0,  bono: 0,    label: '0 – 4 AE' },
+    { min: 5,  bono: 150,  label: '5 – 15 AE' },
+    { min: 16, bono: 300,  label: '16 – 30 AE' },
+    { min: 31, bono: 500,  label: '31 – 50 AE' },
+    { min: 51, bono: 750,  label: '51 – 70 AE' },
+    { min: 71, bono: 1000, label: '71+ AE' },
   ],
   // Esquema de Luz — todo o nada por umbral de calidad
   // Si su tasa de resolución llega al umbral, comisiona el bono fijo.

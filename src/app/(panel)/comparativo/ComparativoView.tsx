@@ -17,6 +17,7 @@ export default function ComparativoView({ snapshot, config }: { snapshot: DataSn
   const cfgEffective = { ...config, baseSol: base };
 
   // Filas: por cada agente con datos, una fila por mes con comisión vieja vs nueva
+  // Esquema nuevo (mayo 2026): pctSol → multiplicador, aeTot → bono, aten para guardrail
   const filas = useMemo(() => {
     const out: Array<{ slug: string; nombre: string; color: string; mes: MesKey; vieja: number; nueva: number; aeTot: number; pctSol: number; }> = [];
     for (const spec of AGENTES_LIST) {
@@ -26,7 +27,7 @@ export default function ComparativoView({ snapshot, config }: { snapshot: DataSn
         const met = ag.meses[m];
         if (!met) continue;
         const vieja = calcularVieja(met, cfgEffective);
-        const nueva = calcularComision(met.aeTot, met.pctSol, cfgEffective).total;
+        const nueva = calcularComision(met.pctSol, met.aeTot, cfgEffective, met.aten).total;
         out.push({ slug: spec.slug, nombre: spec.nombre, color: spec.color, mes: m, vieja, nueva, aeTot: met.aeTot, pctSol: met.pctSol });
       }
     }
@@ -103,19 +104,23 @@ export default function ComparativoView({ snapshot, config }: { snapshot: DataSn
         </Card>
         <Card className="bg-blue-700/[.02] border-blue-700/15">
           <CardHeader
-            eyebrow="Esquema propuesto"
-            title="Doble pilar — Volumen + Productividad"
-            subtitle="Vigente desde abril 2026"
+            eyebrow="Esquema vigente"
+            title="Doble pilar — Eficiencia + Volumen"
+            subtitle="Vigente desde mayo 2026"
             right={<Pill tone="aqua">Vigente</Pill>}
           />
           <ul className="space-y-2 text-[13px] text-ink2">
             <li className="flex items-start gap-2">
               <span className="w-1 h-1 rounded-full bg-aqua-600 mt-2 shrink-0" />
-              <span><strong className="text-ink">Pilar 1:</strong> Total AE (cupón + preowner) → base mensual × multiplicador escalonado.</span>
+              <span><strong className="text-ink">Pilar 1:</strong> % Sol/Cerradas → comisión base × multiplicador escalonado. Transferidas excluidas del denominador.</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="w-1 h-1 rounded-full bg-gold-500 mt-2 shrink-0" />
-              <span><strong className="text-ink">Pilar 2:</strong> % Sol/Atenciones → bono fijo por tramo de productividad.</span>
+              <span><strong className="text-ink">Pilar 2:</strong> AE del mes → bono fijo por tramo de volumen.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="w-1 h-1 rounded-full bg-blue-700 mt-2 shrink-0" />
+              <span><strong className="text-ink">Guardrail:</strong> tramos 1.50× y 2.00× requieren un piso mínimo de atenciones (anti-gaming).</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="w-1 h-1 rounded-full bg-blue-700 mt-2 shrink-0" />
