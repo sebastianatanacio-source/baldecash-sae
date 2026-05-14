@@ -3,6 +3,15 @@
 // ============================================================
 // Lee solicitudes ingresadas, AE por cupón y AE por preowner, con la regla
 // de atribución (cupón primario, preowner secundario, sin doble conteo).
+//
+// Reglas de agrupación temporal:
+//   - Solicitudes (sol) → mes de `Fecha` (creación de la solicitud).
+//   - AE (aeCup, aePre, aePorDia) → mes de `FechaFirmaAirtable` (entrega).
+//     Si esa columna está vacía o cae fuera del rango soportado, la AE cae
+//     al mes de `Fecha` como fallback. Esto refleja que la comisión del mes
+//     debe contar lo que efectivamente se entregó en el mes, no lo que se
+//     ingresó (una solicitud creada el 30-abr y entregada el 02-may cuenta
+//     como AE de mayo, no de abril).
 
 import * as XLSX from 'xlsx';
 import { detectarAgenteAdmin } from '@/lib/domain/agentes';
@@ -54,6 +63,10 @@ export function parseAdminXlsx(buffer: ArrayBuffer | Uint8Array): AdminResultado
   const kPreowner = find('Preowner');
   const kEstado   = find('Estado');
   const kAirt     = find('EstadoSolicitudAirtable');
+  // FechaFirmaAirtable es opcional: si está presente, se usa para agrupar las
+  // AE en el mes de entrega (no en el mes de creación de la solicitud). Si
+  // falta, las AE caen al mes de Fecha (comportamiento previo).
+  const kFirma    = find('FechaFirmaAirtable');
   const faltan = (
     [
       ['Fecha', kFecha], ['Cupón', kCupon], ['Preowner', kPreowner],
@@ -93,19 +106,35 @@ export function parseAdminXlsx(buffer: ArrayBuffer | Uint8Array): AdminResultado
 
     let porMes = porAgenteMes.get(det.slug);
     if (!porMes) { porMes = new Map(); porAgenteMes.set(det.slug, porMes); }
-    let acc = porMes.get(mes);
-    if (!acc) { acc = newAcc(); porMes.set(mes, acc); }
+    const accFor = (mk: MesKey): AdminAcc => {
+      let a = porMes!.get(mk);
+      if (!a) { a = newAcc(); porMes!.set(mk, a); }
+      return a;
+    };
+    const accCreacion = accFor(mes);
 
-    if (det.via === 'cupon') {
-      acc.sol++;
-      if (isAE) acc.aeCup++;
-    } else if (isAE) {
-      acc.aePre++;
-    }
+    // Solicitudes ingresadas → siempre en el mes de creación
+    if (det.via === 'cupon') accCreacion.sol++;
 
     if (isAE) {
-      const day = `${String(dt.getDate()).padStart(2, '0')}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
-      acc.aePorDia.set(day, (acc.aePorDia.get(day) ?? 0) + 1);
+      // AE → en el mes de FechaFirmaAirtable (entrega), si está disponible.
+      // Si falta o cae fuera de rango (MES_MAP), cae al mes de creación.
+      let mesAE = mes;
+      let dtAE = dt;
+      if (kFirma) {
+        const dtFirma = toDate(r[kFirma]);
+        if (dtFirma) {
+          const mfISO = `${dtFirma.getFullYear()}-${String(dtFirma.getMonth() + 1).padStart(2, '0')}`;
+          const mf = MES_MAP[mfISO];
+          if (mf) { mesAE = mf; dtAE = dtFirma; rangoMeses.add(mf); }
+        }
+      }
+      const accAE = accFor(mesAE);
+      if (det.via === 'cupon') accAE.aeCup++;
+      else accAE.aePre++;
+
+      const day = `${String(dtAE.getDate()).padStart(2, '0')}-${String(dtAE.getMonth() + 1).padStart(2, '0')}`;
+      accAE.aePorDia.set(day, (accAE.aePorDia.get(day) ?? 0) + 1);
     }
   }
 
