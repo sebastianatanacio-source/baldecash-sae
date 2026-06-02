@@ -70,7 +70,19 @@ export default function ResumenView({
             Indicadores de canal Blip y solicitudes Admin consolidados por agente, con seguimiento de comisiones bajo el nuevo esquema.
           </p>
         </div>
-        <ChipGroup options={chipOptions} value={mes} onChange={setMes} />
+        <div className="flex items-center gap-4">
+          {(rol === 'admin' || rol === 'jefa') && (
+            <a
+              href="/api/export"
+              download
+              className="text-[12.5px] font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-4 decoration-blue-300 hover:decoration-blue-700 whitespace-nowrap"
+              title="Descarga un Excel con resumen, tipificaciones, AE diarias y el detalle gestión por gestión."
+            >
+              ↓ Descargar Excel
+            </a>
+          )}
+          <ChipGroup options={chipOptions} value={mes} onChange={setMes} />
+        </div>
       </header>
 
       {/* ============== PROGRESO DEL EQUIPO ============== */}

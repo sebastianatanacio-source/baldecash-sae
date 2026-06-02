@@ -10,6 +10,7 @@ import {
 import { buildSnapshot } from '@/lib/parser';
 import { normalizar } from '@/lib/parser/blip';
 import { AGENTES } from '@/lib/domain/agentes';
+import { upload } from '@vercel/blob/client';
 import type { ComisionConfig, DataSnapshot, SnapshotMeta } from '@/lib/domain/types';
 
 interface UserPub { username: 'admin' | 'jefa' | 'fernanda' | 'stefania' | 'julio' | 'luz'; rol: string; display: string }
@@ -100,7 +101,24 @@ function UploadCard({ meta }: { meta: SnapshotMeta | null }) {
       });
       const procMs = Math.round(performance.now() - t0);
 
-      // 2. Enviar el snapshot procesado (≈13 KB) al server para persistirlo
+      // 2. Subir los archivos crudos al Blob (best-effort, no bloquea el
+      //    flujo si falla — son solo para el botón "Descargar Excel").
+      //    Se usa direct-upload para evitar el límite de 4.5 MB de las API routes.
+      const originalesErrs: string[] = [];
+      await Promise.allSettled([
+        upload('originales/blip-latest.csv', csv, {
+          access: 'public',
+          handleUploadUrl: '/api/upload-original',
+          contentType: 'text/csv',
+        }).catch(e => { originalesErrs.push(`Blip crudo: ${e?.message ?? e}`); }),
+        upload('originales/admin-latest.xlsx', xlsx, {
+          access: 'public',
+          handleUploadUrl: '/api/upload-original',
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }).catch(e => { originalesErrs.push(`Admin crudo: ${e?.message ?? e}`); }),
+      ]);
+
+      // 3. Enviar el snapshot procesado (≈13 KB) al server para persistirlo
       const r = await fetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -117,7 +135,7 @@ function UploadCard({ meta }: { meta: SnapshotMeta | null }) {
           merge: data.merge,
           blip: report.blip,
           admin: report.admin,
-          warnings: report.warnings,
+          warnings: [...report.warnings, ...originalesErrs],
         });
         router.refresh();
       }
@@ -219,7 +237,15 @@ function UploadCard({ meta }: { meta: SnapshotMeta | null }) {
         </div>
       )}
 
-      <div className="mt-5 flex justify-end gap-3">
+      <div className="mt-5 flex flex-wrap justify-between items-center gap-3">
+        <a
+          href="/api/export"
+          download
+          className="text-[13px] font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-4 decoration-blue-300 hover:decoration-blue-700"
+          title="Descarga un Excel con resumen, tipificaciones, AE diarias y detalle gestión por gestión de los últimos archivos cargados."
+        >
+          ↓ Descargar Excel (resumen + detalle)
+        </a>
         <button
           type="button"
           disabled={!csv || !xlsx || loading}
