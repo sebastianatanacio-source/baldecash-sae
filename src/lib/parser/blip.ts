@@ -84,6 +84,14 @@ const TAGS_NO_CONTESTA = new Set<string>([
   'no es estudiante',
   'no quiere que lo vuelvan a contactar',
   'numero de empresa',
+  // Mensajes automáticos del bot — no requieren intervención de Luz, no
+  // deben afectar su tasa de resolución. Si aparece con otro spelling,
+  // el admin puede marcarla desde el panel SAE Tags.
+  'mensaje automatico',
+  'mensaje automatico (alq. laptop)',
+  'mensaje automatico(alq. laptop)',
+  'mensaje automatico alq laptop',
+  'mensaje automatico alquiler laptop',
 ]);
 
 /**

@@ -270,6 +270,12 @@ export const TAGS_NO_CONTESTA_DEFAULT = [
   'no es estudiante',
   'no quiere que lo vuelvan a contactar',
   'numero de empresa',
+  // Mensajes automáticos del bot — no afectan tasa de resolución de Luz.
+  'mensaje automatico',
+  'mensaje automatico (alq. laptop)',
+  'mensaje automatico(alq. laptop)',
+  'mensaje automatico alq laptop',
+  'mensaje automatico alquiler laptop',
 ];
 
 export interface MetricasLuzEfectivas {
