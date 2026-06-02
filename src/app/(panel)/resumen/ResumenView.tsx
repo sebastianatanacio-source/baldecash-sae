@@ -14,6 +14,7 @@ import {
   proximoTramoP1, proximoTramoP2, progresoTramo, tramoP1, tramoP2,
 } from '@/lib/domain/comisiones';
 import { esBlipOnly } from '@/lib/domain/agentes';
+import { cfgPorMes, esMesHistorico } from '@/lib/domain/esquemas-historicos';
 import {
   combinarMetricas, fechaCorta, mesActual, metricasAgente, metricasEquipo,
   metricasLuzEfectivas, metricasMeta, nf, pct, solicitudesParaPct,
@@ -363,12 +364,15 @@ function UniversoSAE({
   const m = metricasAgente(snapshot, 'luz', mes);
   if (m.aten === 0 && m.cerradas === 0) return null;
 
-  const ef = metricasLuzEfectivas(m, config);
-  const luzCom = calcularComisionLuz(ef.pctResolucion, config);
+  // Si la jefa filtró por un mes específico, calculamos comisión con el
+  // esquema vigente ese mes (mayo y previos quedan congelados).
+  const cfgMes = mes === 'all' ? config : cfgPorMes(config, mes as MesKey);
+  const ef = metricasLuzEfectivas(m, cfgMes);
+  const luzCom = calcularComisionLuz(ef.pctResolucion, cfgMes);
 
   const meses = snapshot.meta.meses;
   const luzPorMes = meses.map(mk =>
-    metricasLuzEfectivas(metricasAgente(snapshot, 'luz', mk), config),
+    metricasLuzEfectivas(metricasAgente(snapshot, 'luz', mk), cfgPorMes(config, mk)),
   );
 
   return (
@@ -459,9 +463,12 @@ function TarjetaAsesora({
     return <TarjetaLuz spec={spec} snapshot={snapshot} mes={mes} config={config} m={m} />;
   }
 
+  // Esquema vigente para este mes (mayo y previos quedan congelados).
+  const cfgMes = cfgPorMes(config, mes);
+
   const meta = metricasMeta(spec.slug, m);
-  const tramos1 = tramosP1Para(spec.slug, config);
-  const tramos2 = tramosP2Para(spec.slug, config);
+  const tramos1 = tramosP1Para(spec.slug, cfgMes);
+  const tramos2 = tramosP2Para(spec.slug, cfgMes);
 
   const t1Actual = tramoP1(meta.pilar1Valor, tramos1, m.aten);
   const t1Sig = proximoTramoP1(meta.pilar1Valor, tramos1);
@@ -471,7 +478,7 @@ function TarjetaAsesora({
   const progP1 = progresoTramo(meta.pilar1Valor, t1Actual, t1Sig);
   const progP2 = progresoTramo(meta.pilar2Valor, t2Actual, t2Sig);
 
-  const com = calcularComisionPorAgente(spec.slug, meta.pilar1Valor, meta.pilar2Valor, config, m.aten);
+  const com = calcularComisionPorAgente(spec.slug, meta.pilar1Valor, meta.pilar2Valor, cfgMes, m.aten);
 
   // Proyección a cierre — Pilar 1 es %Sol/Cerradas (ratio), Pilar 2 es AE (count)
   const dias = diasTrabajados(snapshot, spec.slug, mes);
@@ -481,7 +488,7 @@ function TarjetaAsesora({
   const solProy = dias > 0 ? proyectarFinDeMes(meta.pilar1Numerador, dias, total) : meta.pilar1Numerador;
   const v1Proy = cerradasProy > 0 ? +(solProy / cerradasProy * 100).toFixed(1) : 0;
   const v2Proy = dias > 0 ? proyectarFinDeMes(meta.pilar2Valor, dias, total) : meta.pilar2Valor;
-  const comProy = calcularComisionPorAgente(spec.slug, v1Proy, v2Proy, config, atenProy).total;
+  const comProy = calcularComisionPorAgente(spec.slug, v1Proy, v2Proy, cfgMes, atenProy).total;
 
   // Faltantes Pilar 1: cuántas solicitudes más necesita (manteniendo denom constante)
   const faltanSolP1 = t1Sig ? solicitudesParaPct(meta.pilar1Numerador, meta.pilar1Denominador, t1Sig.min) : 0;
@@ -651,16 +658,19 @@ function TarjetaLuz({
   config: ComisionConfig;
   m: ReturnType<typeof metricasAgente>;
 }) {
-  // Reclasificación efectiva con la config actual (universo de tipificaciones)
+  // Reclasificación efectiva con la config actual (universo de tipificaciones).
+  // El esquema de comisión Luz, en cambio, se resuelve por mes (junio escalonado,
+  // mayo y previos todo-o-nada).
+  const cfgMes = cfgPorMes(config, mes);
   const ef = metricasLuzEfectivas(m, config);
-  const luz = calcularComisionLuz(ef.pctResolucion, config);
+  const luz = calcularComisionLuz(ef.pctResolucion, cfgMes);
 
   const dias = diasTrabajados(snapshot, spec.slug, mes);
   const total = diasTotalesDelMes(mes);
   const conProy = dias > 0 ? proyectarFinDeMes(ef.contestadas, dias, total) : ef.contestadas;
   const soluProy = dias > 0 ? proyectarFinDeMes(ef.solucionadas, dias, total) : ef.solucionadas;
   const pctProy = conProy > 0 ? +(soluProy / conProy * 100).toFixed(1) : 0;
-  const luzProy = calcularComisionLuz(pctProy, config);
+  const luzProy = calcularComisionLuz(pctProy, cfgMes);
   const ppFaltantes = +(luz.umbralPct - ef.pctResolucion).toFixed(1);
 
   const progPct = Math.min(100, (ef.pctResolucion / luz.umbralPct) * 100);

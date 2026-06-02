@@ -6,6 +6,7 @@ import { Pill } from '@/components/ui/Chips';
 import { AGENTES_LIST } from '@/lib/domain/agentes';
 import { MES_LABEL_CORTO } from '@/lib/domain/meses';
 import { calcularComision, formatSol } from '@/lib/domain/comisiones';
+import { cfgPorMes } from '@/lib/domain/esquemas-historicos';
 import { fechaCorta } from '@/lib/domain/helpers';
 import type { ComisionConfig, DataSnapshot } from '@/lib/domain/types';
 
@@ -355,8 +356,10 @@ function HistoricoUltimoMes({ snapshot, config }: { snapshot: DataSnapshot; conf
     .map(spec => {
       const m = snapshot.agentes[spec.slug]!.meses[ult];
       if (!m) return null;
-      // Esquema mayo 2026: pctSol → multiplicador, aeTot → bono, aten para guardrail
-      const c = calcularComision(m.pctSol, m.aeTot, config, m.aten);
+      // pctSol → multiplicador, aeTot → bono, aten para guardrail.
+      // Cada mes con su esquema vigente (junio = nuevo, mayo y previos = viejo).
+      const cfgMes = cfgPorMes(config, ult);
+      const c = calcularComision(m.pctSol, m.aeTot, cfgMes, m.aten);
       return { spec, m, c };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);

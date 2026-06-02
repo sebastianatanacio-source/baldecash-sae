@@ -4,7 +4,8 @@ import { Card, CardHeader } from './Card';
 import { calcularComisionLuz, formatSol } from '@/lib/domain/comisiones';
 import { basePara, tramosP1Para, tramosP2Para } from '@/lib/domain/helpers';
 import { esBlipOnly } from '@/lib/domain/agentes';
-import type { AgenteSlug, ComisionConfig } from '@/lib/domain/types';
+import { MES_LABEL } from '@/lib/domain/meses';
+import type { AgenteSlug, ComisionConfig, MesKey } from '@/lib/domain/types';
 
 /**
  * Tabla visual del esquema de comisiones, marcando el tramo activo
@@ -20,7 +21,9 @@ export function EsquemaComisiones({
   pilar1Etiqueta,
   pilar2NumeradorEtiqueta,
   agenteColor,
+  mes,
 }: {
+  /** Esquema ya resuelto para el mes (caller debe llamar cfgPorMes si aplica). */
   config: ComisionConfig;
   agenteSlug: AgenteSlug;
   /** Valor actual del Pilar 1: AE para la mayoría, deja-sol para Luz */
@@ -32,20 +35,112 @@ export function EsquemaComisiones({
   /** Etiqueta del numerador del P2 (ej. "solicitudes", "deja-solicitud") */
   pilar2NumeradorEtiqueta: string;
   agenteColor: string;
+  /** Mes que se está mostrando — solo para etiqueta de "Esquema vigente · X". */
+  mes?: MesKey;
 }) {
   const baseSol = basePara(agenteSlug, config);
   const tramos1 = tramosP1Para(agenteSlug, config);
   const tramos2 = tramosP2Para(agenteSlug, config);
   const blipOnly = esBlipOnly(agenteSlug);
+  const eyebrowMes = mes ? `Esquema vigente · ${MES_LABEL[mes].toLowerCase()} 2026` : 'Esquema vigente';
 
-  // Para Luz mostramos el esquema todo-o-nada
+  // Para Luz: si hay tramos escalonados (junio+) mostramos los escalones;
+  // si no, fallback al todo-o-nada (mayo y previos).
   if (blipOnly) {
     const luz = calcularComisionLuz(pilar2Valor, config);
+    const tramosLuz = config.luzEsquema?.tramos;
+
+    if (tramosLuz && tramosLuz.length > 0) {
+      // Esquema escalonado (junio 2026 en adelante)
+      const tramosOrd = [...tramosLuz].sort((a, b) => a.min - b.min);
+      // Determinar tramo activo (el de mayor min ≤ pctResolucion); -1 si no califica
+      let activoIdx = -1;
+      tramosOrd.forEach((t, i) => { if (pilar2Valor >= t.min) activoIdx = i; });
+      return (
+        <Card padding="p-0">
+          <div className="px-6 pt-6 pb-4 border-b border-line">
+            <CardHeader
+              eyebrow={eyebrowMes}
+              title="Cómo se calcula tu comisión"
+              subtitle="Esquema escalonado: el bono crece según tu tasa de resolución"
+            />
+          </div>
+          <div className="p-6">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+              {/* No califica */}
+              <div
+                className={`flex flex-col justify-between rounded-xl px-4 py-4 border-2 transition-all ${
+                  activoIdx === -1 ? 'shadow-card' : ''
+                }`}
+                style={{
+                  background: activoIdx === -1 ? '#FFF7E6' : '#FAFBFE',
+                  borderColor: activoIdx === -1 ? '#D1A646' : '#E4E7F2',
+                }}
+              >
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-2 h-2 rounded-full bg-gold-400 shrink-0" />
+                    <div className="font-semibold text-[12.5px] text-ink">{`< ${tramosOrd[0].min}%`}</div>
+                  </div>
+                  <div className="text-[10.5px] text-muted">No comisiona</div>
+                </div>
+                <div className="text-right mt-2">
+                  <div className="font-display font-semibold text-[16px] tabular text-gold-700">{formatSol(0)}</div>
+                  {activoIdx === -1 && (
+                    <div className="text-[9.5px] uppercase tracking-wider font-bold text-gold-700 mt-0.5">Estado actual</div>
+                  )}
+                </div>
+              </div>
+              {tramosOrd.map((t, i) => {
+                const activo = i === activoIdx;
+                return (
+                  <div
+                    key={i}
+                    className={`flex flex-col justify-between rounded-xl px-4 py-4 border-2 transition-all ${
+                      activo ? 'shadow-card' : ''
+                    }`}
+                    style={{
+                      background: activo ? agenteColor + '14' : '#FAFBFE',
+                      borderColor: activo ? agenteColor : '#E4E7F2',
+                    }}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: agenteColor, opacity: 0.4 + (i / tramosOrd.length) * 0.6 }} />
+                        <div className="font-semibold text-[12.5px] text-ink">{`≥ ${t.min}%`}</div>
+                      </div>
+                      <div className="text-[10.5px] text-muted">{t.label ?? `Bono S/${t.bono}`}</div>
+                    </div>
+                    <div className="text-right mt-2">
+                      <div className="font-display font-semibold text-[16px] tabular" style={{ color: agenteColor }}>
+                        {formatSol(t.bono)}
+                      </div>
+                      {activo && (
+                        <div className="text-[9.5px] uppercase tracking-wider font-bold mt-0.5" style={{ color: agenteColor }}>
+                          Estado actual
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="bg-bg/40 border border-line rounded-lg p-4 text-[12.5px] text-ink2 leading-relaxed">
+              <p className="font-semibold text-ink mb-1.5">Cómo se mide</p>
+              <p className="text-muted">
+                <strong className="text-ink2">Tasa de resolución</strong> = consultas solucionadas (universo SAE) ÷ conversaciones contestadas (cerradas que no son "no contesta") × 100.
+              </p>
+            </div>
+          </div>
+        </Card>
+      );
+    }
+    // Fallback: esquema legacy todo-o-nada (feb–may 2026)
     return (
       <Card padding="p-0">
         <div className="px-6 pt-6 pb-4 border-b border-line">
           <CardHeader
-            eyebrow="Esquema vigente"
+            eyebrow={eyebrowMes}
             title="Cómo se calcula tu comisión"
             subtitle="Esquema todo-o-nada: pasas el umbral o no comisionas"
           />
@@ -139,7 +234,7 @@ export function EsquemaComisiones({
     <Card padding="p-0">
       <div className="px-6 pt-6 pb-4 border-b border-line">
         <CardHeader
-          eyebrow="Esquema vigente · mayo 2026"
+          eyebrow={eyebrowMes}
           title="Cómo se calcula tu comisión"
           subtitle={`Comisión base del Pilar 1: ${formatSol(baseSol)} · El tramo donde estás ahora aparece resaltado`}
         />

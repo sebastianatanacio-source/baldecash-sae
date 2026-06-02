@@ -488,18 +488,47 @@ function ConfigCard({ config: initial }: { config: ComisionConfig }) {
 // ============================================================ CONFIG LUZ
 function ConfigLuzCard({ config: initial }: { config: ComisionConfig }) {
   const router = useRouter();
-  const [umbral, setUmbral] = useState<number>(initial.luzEsquema?.umbralPct ?? 60);
-  const [bono, setBono] = useState<number>(initial.luzEsquema?.bono ?? 300);
+  // Tramos escalonados (esquema desde junio 2026). Si el config persistido
+  // todavía está en el shape viejo (umbralPct+bono), lo migramos a un solo
+  // tramo equivalente para no perder la configuración del admin.
+  const [tramos, setTramos] = useState<Array<{ min: number; bono: number; label: string }>>(() => {
+    const t = initial.luzEsquema?.tramos;
+    if (Array.isArray(t) && t.length > 0) return t.map(x => ({ ...x }));
+    const u = initial.luzEsquema?.umbralPct ?? 60;
+    const b = initial.luzEsquema?.bono ?? 300;
+    return [{ min: u, bono: b, label: `${u}% o más · S/${b}` }];
+  });
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  function actualizar(idx: number, campo: 'min' | 'bono' | 'label', valor: string) {
+    setTramos(prev => prev.map((t, i) => {
+      if (i !== idx) return t;
+      if (campo === 'label') return { ...t, label: valor };
+      const n = Number(valor || 0);
+      return { ...t, [campo]: n };
+    }));
+  }
+  function agregarTramo() {
+    setTramos(prev => {
+      const ultimo = prev[prev.length - 1];
+      const next = { min: (ultimo?.min ?? 60) + 10, bono: (ultimo?.bono ?? 300) + 50, label: '' };
+      return [...prev, { ...next, label: `${next.min}% o más · S/${next.bono}` }];
+    });
+  }
+  function quitarTramo(idx: number) {
+    setTramos(prev => prev.filter((_, i) => i !== idx));
+  }
+
   async function save() {
     setSaving(true); setError(null);
     try {
+      // Orden ascendente por min para que el cálculo aplique bien
+      const tramosOrd = [...tramos].sort((a, b) => a.min - b.min);
       const next: ComisionConfig = {
         ...initial,
-        luzEsquema: { umbralPct: umbral, bono },
+        luzEsquema: { tramos: tramosOrd },
       };
       const r = await fetch('/api/config', {
         method: 'PUT',
@@ -517,57 +546,84 @@ function ConfigLuzCard({ config: initial }: { config: ComisionConfig }) {
     }
   }
 
+  const tramosOrd = [...tramos].sort((a, b) => a.min - b.min);
+  const umbralMin = tramosOrd[0]?.min ?? 0;
+
   return (
     <Card>
       <CardHeader
-        eyebrow="Esquema SAE · todo o nada"
+        eyebrow="Esquema SAE · escalonado"
         title="Comisión de Luz"
-        subtitle="Si su tasa de resolución alcanza el umbral al cierre del mes, comisiona el bono fijo. No hay escalones intermedios."
+        subtitle="Cada tramo aplica cuando la tasa de resolución llega a su umbral mínimo. Se cobra el bono del tramo más alto alcanzado."
       />
 
       <div className="bg-aqua-100 border border-aqua-300 rounded-xl p-4 mb-5 text-[12.5px] text-aqua-700 leading-relaxed">
         <strong>Cómo se mide:</strong> tasa de resolución = consultas solucionadas (universo unificado de tipificaciones SAE) ÷ contestadas (cerradas que no son "no contesta") × 100.
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-4">
-        <div className="bg-bg/60 border border-line rounded-xl p-5">
-          <p className="eyebrow mb-2">Umbral de tasa de resolución</p>
-          <div className="flex items-baseline gap-2">
+      <div className="space-y-2">
+        <div className="grid grid-cols-[1fr_1fr_2fr_auto] gap-2 text-[11px] uppercase tracking-wider text-muted px-1">
+          <span>Umbral mínimo (%)</span>
+          <span>Bono (S/)</span>
+          <span>Etiqueta visible</span>
+          <span></span>
+        </div>
+        {tramos.map((t, idx) => (
+          <div key={idx} className="grid grid-cols-[1fr_1fr_2fr_auto] gap-2 items-center bg-bg/60 border border-line rounded-xl p-3">
             <input
               type="number" min={0} max={100} step={0.5}
-              value={umbral}
-              onChange={e => setUmbral(Number(e.target.value || 0))}
-              className="input-field font-display text-[24px] font-semibold tabular max-w-[140px]"
+              value={t.min}
+              onChange={e => actualizar(idx, 'min', e.target.value)}
+              className="input-field font-display text-[18px] font-semibold tabular"
             />
-            <span className="text-[14px] text-muted font-medium">%</span>
-          </div>
-          <p className="text-[11px] text-muted2 mt-2">
-            Si Luz alcanza este % al cierre del mes, comisiona el bono. Default: <strong>60%</strong>.
-          </p>
-        </div>
-        <div className="bg-bg/60 border border-line rounded-xl p-5">
-          <p className="eyebrow mb-2">Bono fijo (S/)</p>
-          <div className="flex items-baseline gap-2">
-            <span className="text-[14px] text-muted font-medium">S/</span>
             <input
               type="number" min={0} step={50}
-              value={bono}
-              onChange={e => setBono(Number(e.target.value || 0))}
-              className="input-field font-display text-[24px] font-semibold tabular"
+              value={t.bono}
+              onChange={e => actualizar(idx, 'bono', e.target.value)}
+              className="input-field font-display text-[18px] font-semibold tabular"
             />
+            <input
+              type="text"
+              value={t.label}
+              onChange={e => actualizar(idx, 'label', e.target.value)}
+              className="input-field text-[13px]"
+              placeholder="Ej. 60% – 79% · S/300"
+            />
+            <button
+              type="button"
+              onClick={() => quitarTramo(idx)}
+              disabled={tramos.length <= 1}
+              className="text-[12px] text-muted hover:text-gold-700 disabled:opacity-30 px-2"
+              title="Quitar tramo"
+            >
+              ✕
+            </button>
           </div>
-          <p className="text-[11px] text-muted2 mt-2">
-            Monto que cobra Luz si pasa el umbral. Default: <strong>S/ 300</strong>.
-          </p>
-        </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex justify-end">
+        <button
+          type="button"
+          onClick={agregarTramo}
+          className="text-[12.5px] text-blue-700 hover:text-blue-900 font-semibold underline underline-offset-4 decoration-blue-300"
+        >
+          + Agregar tramo
+        </button>
       </div>
 
       <div className="mt-6 rounded-xl border-2 border-dashed border-line p-5 bg-bg/30">
-        <p className="eyebrow mb-2">Vista previa de la regla</p>
-        <p className="text-[14px] text-ink2 leading-relaxed">
-          Si la tasa de resolución de Luz al cierre del mes es <strong className="text-ink tabular">≥ {umbral}%</strong>, comisiona <strong className="text-ink tabular">S/ {bono.toLocaleString('es-PE')}</strong>.
-          {' '}Si está por debajo del {umbral}%, comisiona <strong className="text-ink tabular">S/ 0</strong>.
-        </p>
+        <p className="eyebrow mb-2">Vista previa</p>
+        <ul className="text-[13.5px] text-ink2 leading-relaxed space-y-1.5">
+          <li><strong className="text-ink tabular">{`< ${umbralMin}%`}</strong> → no comisiona</li>
+          {tramosOrd.map((t, i) => (
+            <li key={i}>
+              <strong className="text-ink tabular">{`≥ ${t.min}%`}</strong>
+              {' → cobra '}
+              <strong className="text-ink tabular">{`S/ ${t.bono.toLocaleString('es-PE')}`}</strong>
+            </li>
+          ))}
+        </ul>
       </div>
 
       {error && (
@@ -580,7 +636,7 @@ function ConfigLuzCard({ config: initial }: { config: ComisionConfig }) {
         {savedAt && (
           <span className="text-[12px] text-aqua-700">Configuración guardada</span>
         )}
-        <button onClick={save} disabled={saving} className="btn-primary">
+        <button onClick={save} disabled={saving || tramos.length === 0} className="btn-primary">
           {saving ? 'Guardando…' : 'Guardar regla de Luz'}
         </button>
       </div>

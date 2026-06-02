@@ -112,28 +112,51 @@ export function calcularComision(
 }
 
 /**
- * Esquema simple de Luz: si su tasa de resolución (% solucionadas
- * sobre contestadas) alcanza el umbral, comisiona el bono fijo.
- * Sin pilares, sin multiplicadores, sin escalones.
+ * Esquema de Luz. Desde junio 2026 soporta tramos escalonados:
+ *   pct < umbralMin → 0
+ *   pct >= 60 → 300, >= 80 → 350, >= 90 → 500 (configurable)
+ * Si el config no define `tramos`, se cae al legacy todo-o-nada con
+ * `umbralPct`/`bono` (un solo escalón).
  */
 export interface CalculoLuz {
+  /** Umbral mínimo para que Luz cobre algo (el `min` del primer tramo) */
   umbralPct: number;
+  /** Bono que efectivamente cobra Luz dado su pctResolucion */
   bono: number;
+  /** % de resolución observado en el mes */
   pctResolucion: number;
+  /** ¿Llega al umbral mínimo? */
   cumple: boolean;
+  /** Total a pagar (== bono cuando cumple) */
   total: number;
+  /** Etiqueta del tramo alcanzado, útil para mostrar en UI */
+  tramoLabel?: string;
 }
 
 export function calcularComisionLuz(pctResolucion: number, cfg: ComisionConfig): CalculoLuz {
+  // Esquema escalonado (vigente desde junio 2026)
+  if (cfg.luzEsquema?.tramos && cfg.luzEsquema.tramos.length > 0) {
+    const tramos = [...cfg.luzEsquema.tramos].sort((a, b) => a.min - b.min);
+    const umbralPct = tramos[0].min;
+    let bono = 0;
+    let tramoLabel: string | undefined;
+    for (const t of tramos) {
+      if (pctResolucion >= t.min) {
+        bono = t.bono;
+        tramoLabel = t.label;
+      }
+    }
+    const cumple = bono > 0;
+    return { umbralPct, bono, pctResolucion, cumple, total: bono, tramoLabel };
+  }
+  // Legacy todo-o-nada (esquema feb–may 2026)
   const umbralPct = cfg.luzEsquema?.umbralPct ?? 60;
   const bono = cfg.luzEsquema?.bono ?? 300;
   const cumple = pctResolucion >= umbralPct;
   return {
-    umbralPct,
-    bono,
-    pctResolucion,
-    cumple,
+    umbralPct, bono, pctResolucion, cumple,
     total: cumple ? bono : 0,
+    tramoLabel: cumple ? `≥ ${umbralPct}% · S/${bono}` : undefined,
   };
 }
 
@@ -166,7 +189,9 @@ export function calcularComisionPorAgente(
         tramo: {
           min: luz.umbralPct,
           bono: luz.bono,
-          label: luz.cumple ? `≥ ${luz.umbralPct}% · cobra ${luz.bono}` : `< ${luz.umbralPct}% · no cobra`,
+          label: luz.tramoLabel ?? (luz.cumple
+            ? `≥ ${luz.umbralPct}% · cobra ${luz.bono}`
+            : `< ${luz.umbralPct}% · no cobra`),
         },
         aplicado: luz.total,
       },

@@ -7,6 +7,7 @@ import BarChart from '@/components/charts/BarChart';
 import { AGENTES_LIST } from '@/lib/domain/agentes';
 import { MES_LABEL, MES_LABEL_CORTO } from '@/lib/domain/meses';
 import { calcularComision, calcularVieja, formatSol } from '@/lib/domain/comisiones';
+import { cfgPorMes } from '@/lib/domain/esquemas-historicos';
 import { fechaCorta, nf } from '@/lib/domain/helpers';
 import type { ComisionConfig, DataSnapshot, MesKey } from '@/lib/domain/types';
 
@@ -27,7 +28,9 @@ export default function ComparativoView({ snapshot, config }: { snapshot: DataSn
         const met = ag.meses[m];
         if (!met) continue;
         const vieja = calcularVieja(met, cfgEffective);
-        const nueva = calcularComision(met.pctSol, met.aeTot, cfgEffective, met.aten).total;
+        // Cada mes con su esquema vigente (junio = nuevo, mayo y previos = viejo)
+        const cfgMes = cfgPorMes(cfgEffective, m);
+        const nueva = calcularComision(met.pctSol, met.aeTot, cfgMes, met.aten).total;
         out.push({ slug: spec.slug, nombre: spec.nombre, color: spec.color, mes: m, vieja, nueva, aeTot: met.aeTot, pctSol: met.pctSol });
       }
     }

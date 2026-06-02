@@ -12,25 +12,42 @@ const LOCAL_PATH = path.join(process.cwd(), 'data', KEY);
 const useBlob = () => Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 
 /**
- * Detecta si el config guardado está bajo el esquema viejo (AE → multiplicador,
- * % → bono) y lo migra al esquema nuevo (% → multiplicador, AE → bono).
+ * Migración del config persistido al esquema vigente. Detecta esquemas
+ * previos y los reemplaza con los defaults actuales:
  *
- * Señal del esquema viejo: ningún tramo de pilar1 tiene mul=0 (el tramo
- * "sin comisión por <5%" es exclusivo del esquema nuevo).
+ *   1. Pre-mayo 2026 (v1): AE manejaba multiplicador, % manejaba bono.
+ *      Señal: ningún tramo de pilar1 tiene mul=0.
  *
- * La migración reemplaza pilar1 y pilar2 con los defaults nuevos, pero
- * preserva baseSol, comisiones viejas y configuración SAE de Luz.
+ *   2. Mayo 2026 (v2): tramos 5% / 6% / 7.6% / 9%.
+ *      Junio 2026 (v3, vigente): tramos 7% / 9% / 11% / 13% / 15%.
+ *      Señal: hay un tramo con min===5.
+ *
+ *   3. Luz todo-o-nada (legacy): luzEsquema sin array `tramos`.
+ *      Junio 2026: luzEsquema con `tramos` escalonados.
+ *
+ * La migración reemplaza pilar1/pilar2/luzEsquema con los defaults actuales
+ * y preserva baseSol, comisiones viejas y tags SAE.
  */
 function migrarSiNecesario(cfg: ComisionConfig): ComisionConfig {
-  const esEsquemaNuevo =
-    Array.isArray(cfg.pilar1) &&
-    cfg.pilar1.some(t => t && t.mul === 0);
-  if (esEsquemaNuevo) return cfg;
-  return {
-    ...cfg,
-    pilar1: DEFAULT_CONFIG.pilar1,
-    pilar2: DEFAULT_CONFIG.pilar2,
-  };
+  let out = cfg;
+
+  const noTieneMulCero =
+    !Array.isArray(cfg.pilar1) || !cfg.pilar1.some(t => t && t.mul === 0);
+  const tieneTramoMin5 =
+    Array.isArray(cfg.pilar1) && cfg.pilar1.some(t => t && t.min === 5);
+  if (noTieneMulCero || tieneTramoMin5) {
+    out = { ...out, pilar1: DEFAULT_CONFIG.pilar1, pilar2: DEFAULT_CONFIG.pilar2 };
+  }
+
+  const luzLegacy =
+    !cfg.luzEsquema ||
+    !Array.isArray(cfg.luzEsquema.tramos) ||
+    cfg.luzEsquema.tramos.length === 0;
+  if (luzLegacy) {
+    out = { ...out, luzEsquema: DEFAULT_CONFIG.luzEsquema };
+  }
+
+  return out;
 }
 
 export async function loadConfig(): Promise<ComisionConfig> {

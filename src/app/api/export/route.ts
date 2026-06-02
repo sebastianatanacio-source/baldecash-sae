@@ -16,6 +16,7 @@ import { loadOriginal } from '@/lib/storage/originales';
 import { calcularComisionPorAgente, formatSol } from '@/lib/domain/comisiones';
 import { AGENTES_LIST, esBlipOnly } from '@/lib/domain/agentes';
 import { ordenarMeses } from '@/lib/domain/meses';
+import { cfgPorMes } from '@/lib/domain/esquemas-historicos';
 import type { MesKey } from '@/lib/domain/types';
 
 export const runtime = 'nodejs';
@@ -50,11 +51,13 @@ export async function GET() {
       const m = ag.meses[mes];
       if (!m) continue;
       const isLuz = esBlipOnly(spec.slug);
+      // Cada mes con su esquema vigente (junio = nuevo, mayo y previos = viejo)
+      const cfgMes = cfgPorMes(cfg, mes);
       const c = calcularComisionPorAgente(
         spec.slug,
         isLuz ? 0 : m.pctSol,
         isLuz ? m.pctResolucion : m.aeTot,
-        cfg,
+        cfgMes,
         isLuz ? undefined : m.aten,
       );
       resumenRows.push({

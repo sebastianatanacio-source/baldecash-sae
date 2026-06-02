@@ -12,6 +12,7 @@ import BarChart from '@/components/charts/BarChart';
 import LineChart from '@/components/charts/LineChart';
 import DonutChart from '@/components/charts/DonutChart';
 import { AGENTES, esBlipOnly } from '@/lib/domain/agentes';
+import { cfgPorMes, esMesHistorico } from '@/lib/domain/esquemas-historicos';
 import { MES_LABEL_CORTO, MES_LABEL } from '@/lib/domain/meses';
 import {
   calcularComision, calcularComisionLuz, calcularComisionPorAgente, calcularVieja, formatSol,
@@ -247,10 +248,13 @@ function SeccionMetas({
     return <SeccionMetaLuz snapshot={snapshot} config={config} agenteSlug={agenteSlug} mes={mes} esMesActual={esMesActual} m={m} spec={spec} />;
   }
 
+  // Esquema vigente para este mes (mayo y previos quedan congelados con su esquema).
+  const cfgMes = cfgPorMes(config, mes);
+
   const meta = metricasMeta(agenteSlug, m);
-  const baseSol = basePara(agenteSlug, config);
-  const tramos1 = tramosP1Para(agenteSlug, config);
-  const tramos2 = tramosP2Para(agenteSlug, config);
+  const baseSol = basePara(agenteSlug, cfgMes);
+  const tramos1 = tramosP1Para(agenteSlug, cfgMes);
+  const tramos2 = tramosP2Para(agenteSlug, cfgMes);
 
   // Tramos actuales y siguientes
   // Pilar 1 ahora es %Sol: tramoP1 acepta guardrail de atenciones
@@ -263,12 +267,12 @@ function SeccionMetas({
   const progresoP1 = progresoTramo(meta.pilar1Valor, t1Actual, t1Siguiente);
   const progresoP2 = progresoTramo(meta.pilar2Valor, t2Actual, t2Siguiente);
 
-  const comActual = calcularComisionPorAgente(agenteSlug, meta.pilar1Valor, meta.pilar2Valor, config, m.aten);
+  const comActual = calcularComisionPorAgente(agenteSlug, meta.pilar1Valor, meta.pilar2Valor, cfgMes, m.aten);
   const comProx1 = t1Siguiente
-    ? calcularComisionPorAgente(agenteSlug, t1Siguiente.min, meta.pilar2Valor, config, m.aten)
+    ? calcularComisionPorAgente(agenteSlug, t1Siguiente.min, meta.pilar2Valor, cfgMes, m.aten)
     : null;
   const comProx2 = t2Siguiente
-    ? calcularComisionPorAgente(agenteSlug, meta.pilar1Valor, t2Siguiente.min, config, m.aten)
+    ? calcularComisionPorAgente(agenteSlug, meta.pilar1Valor, t2Siguiente.min, cfgMes, m.aten)
     : null;
 
   // Proyección a fin de mes (solo si es el mes actual)
@@ -284,9 +288,9 @@ function SeccionMetas({
     const v1Proy = cerradasProy > 0 ? +(solProy / cerradasProy * 100).toFixed(1) : 0;
     // Pilar 2 ahora es AE (count) → proyección directa
     const v2Proy = proyectarFinDeMes(meta.pilar2Valor, dias, total);
-    const comProy = calcularComisionPorAgente(agenteSlug, v1Proy, v2Proy, config, atenProy).total;
+    const comProy = calcularComisionPorAgente(agenteSlug, v1Proy, v2Proy, cfgMes, atenProy).total;
     return { dias, total, v1Proy, v2Proy, atenProy, cerradasProy, solProy, comProy };
-  }, [esMesActual, snapshot, agenteSlug, mes, m, meta, config]);
+  }, [esMesActual, snapshot, agenteSlug, mes, m, meta, cfgMes]);
 
   // Faltantes Pilar 1 (%): cuántas solicitudes más se necesitan para alcanzar el siguiente tramo de %,
   // manteniendo el denominador (cerradas) constante.
@@ -417,8 +421,11 @@ function SeccionMetaLuz({
 }) {
   // Recalculamos con el universo de tipificaciones que el admin haya
   // definido, en lugar de tomar m.solucionadas directo del parser.
+  // El esquema de comisión Luz se resuelve por mes (junio escalonado, mayo
+  // y previos todo-o-nada).
+  const cfgMes = cfgPorMes(config, mes);
   const ef = metricasLuzEfectivas(m, config);
-  const luz = calcularComisionLuz(ef.pctResolucion, config);
+  const luz = calcularComisionLuz(ef.pctResolucion, cfgMes);
 
   // Solucionadas adicionales necesarias para subir al umbral
   const necesariasParaUmbral = Math.ceil(ef.contestadas * (luz.umbralPct / 100));
@@ -434,9 +441,9 @@ function SeccionMetaLuz({
     const conProy = proyectarFinDeMes(ef.contestadas, dias, total);
     const soluProy = proyectarFinDeMes(ef.solucionadas, dias, total);
     const pctProy = conProy > 0 ? +(soluProy / conProy * 100).toFixed(1) : 0;
-    const luzProy = calcularComisionLuz(pctProy, config);
+    const luzProy = calcularComisionLuz(pctProy, cfgMes);
     return { soluProy, conProy, pctProy, luzProy };
-  }, [esMesActual, snapshot, agenteSlug, mes, ef, config]);
+  }, [esMesActual, snapshot, agenteSlug, mes, ef, cfgMes]);
 
   return (
     <section>
@@ -714,7 +721,8 @@ function SeccionEsquema({
         Tu esquema de comisiones
       </h2>
       <EsquemaComisiones
-        config={config}
+        config={cfgPorMes(config, mes)}
+        mes={mes}
         agenteSlug={agenteSlug}
         pilar1Valor={meta.pilar1Valor}
         pilar2Valor={meta.pilar2Valor}
@@ -1017,7 +1025,9 @@ function SeccionHistorico({
   const filas = mesesDisponibles.map(m => {
     const met = snapshot.agentes[agenteSlug]!.meses[m]!;
     const meta = metricasMeta(agenteSlug, met);
-    const com = calcularComisionPorAgente(agenteSlug, meta.pilar1Valor, meta.pilar2Valor, config, met.aten).total;
+    // Cada mes usa el esquema vigente ese mes (mayo y previos congelados).
+    const cfgMes = cfgPorMes(config, m);
+    const com = calcularComisionPorAgente(agenteSlug, meta.pilar1Valor, meta.pilar2Valor, cfgMes, met.aten).total;
     return { mes: m, met, com };
   });
 

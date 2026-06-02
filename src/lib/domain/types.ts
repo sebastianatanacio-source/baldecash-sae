@@ -131,6 +131,15 @@ export interface TramoP2 {
   label: string;
 }
 
+export interface TramoLuz {
+  /** % resolución mínimo para entrar al tramo (inclusive) */
+  min: number;
+  /** Bono fijo en Soles que cobra Luz si alcanza este tramo */
+  bono: number;
+  /** Etiqueta humana */
+  label: string;
+}
+
 export interface ComisionConfig {
   baseSol: number;
   pilar1: TramoP1[];
@@ -141,15 +150,18 @@ export interface ComisionConfig {
   viejaPreowner: number;
 
   /**
-   * Esquema simple de Luz: si su tasa de resolución (% solucionadas /
-   * contestadas) alcanza el umbral, se comisiona el bono fijo.
-   * No hay pilares, multiplicadores ni escalones.
+   * Esquema de Luz. Desde junio 2026 admite escalones (campo `tramos`):
+   * cada tramo aplica si `pctResolucion >= min`, y se elige el de mayor `min`
+   * alcanzado. Si no se define `tramos`, se usa el legacy todo-o-nada con
+   * `umbralPct`/`bono` (un solo escalón).
    */
   luzEsquema?: {
-    /** Umbral mínimo de % resolución para comisionar (default 60) */
-    umbralPct: number;
-    /** Bono fijo a pagar si se cumple el umbral (default 300) */
-    bono: number;
+    /** [LEGACY] Umbral único para esquema todo-o-nada. Ignorado si hay tramos. */
+    umbralPct?: number;
+    /** [LEGACY] Bono único del esquema todo-o-nada. Ignorado si hay tramos. */
+    bono?: number;
+    /** Tramos escalonados (esquema vigente desde junio 2026). */
+    tramos?: TramoLuz[];
   };
 
   /**
@@ -182,17 +194,19 @@ export interface ComisionConfig {
 
 export const DEFAULT_CONFIG: ComisionConfig = {
   baseSol: 1100,
-  // Esquema desde mayo 2026: el % Sol/Cerradas maneja el multiplicador
-  // (la eficiencia premia). Transferidas no entran al denominador (regla SAE).
-  // Guardrail #1: los tramos 1.50× y 2.00× requieren piso mínimo de atenciones.
+  // Esquema vigente desde JUNIO 2026 — "Ventas call":
+  //   Tramos más estrictos, sin guardrail de piso de atenciones.
+  //   El % Sol/Cerradas maneja el multiplicador (transferidas excluidas).
+  // Para meses anteriores (feb–may 2026), ver ESQUEMAS_HISTORICOS.
   pilar1: [
-    { min: 0,   mul: 0,    label: '0% – 4.9%' },
-    { min: 5,   mul: 1.0,  label: '5% – 5.9%' },
-    { min: 6,   mul: 1.25, label: '6% – 7.5%' },
-    { min: 7.6, mul: 1.5,  label: '7.6% – 8.9%', pisoAten: 1200 },
-    { min: 9,   mul: 2.0,  label: '9% o más',    pisoAten: 1800 },
+    { min: 0,  mul: 0,    label: '0% – 6.9%' },
+    { min: 7,  mul: 0.5,  label: '7% – 8.9%' },
+    { min: 9,  mul: 1.0,  label: '9% – 10.9%' },
+    { min: 11, mul: 1.25, label: '11% – 12.9%' },
+    { min: 13, mul: 1.5,  label: '13% – 14.9%' },
+    { min: 15, mul: 2.0,  label: '15% o más' },
   ],
-  // Pilar 2 ahora premia volumen como bono fijo: las AE del mes.
+  // Pilar 2: sin cambios (bono fijo por AE del mes).
   pilar2: [
     { min: 0,  bono: 0,    label: '0 – 4 AE' },
     { min: 5,  bono: 150,  label: '5 – 15 AE' },
@@ -201,11 +215,14 @@ export const DEFAULT_CONFIG: ComisionConfig = {
     { min: 51, bono: 750,  label: '51 – 70 AE' },
     { min: 71, bono: 1000, label: '71+ AE' },
   ],
-  // Esquema de Luz — todo o nada por umbral de calidad
-  // Si su tasa de resolución llega al umbral, comisiona el bono fijo.
+  // Esquema de Luz desde junio 2026: escalonado por % de resolución.
+  // Reemplaza el viejo todo-o-nada (≥60 → 300).
   luzEsquema: {
-    umbralPct: 60,
-    bono: 300,
+    tramos: [
+      { min: 60, bono: 300, label: '60% – 79% · S/300' },
+      { min: 80, bono: 350, label: '80% – 89% · S/350' },
+      { min: 90, bono: 500, label: '90% o más · S/500' },
+    ],
   },
   viejaCupon: 20,
   viejaPreowner: 12,
