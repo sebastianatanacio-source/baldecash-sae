@@ -74,12 +74,16 @@ export default function ResumenView({
         <div className="flex items-center gap-4">
           {(rol === 'admin' || rol === 'jefa') && (
             <a
-              href="/api/export"
+              href={mes === 'all' ? '/api/export' : `/api/export?mes=${mes}`}
               download
               className="text-[12.5px] font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-4 decoration-blue-300 hover:decoration-blue-700 whitespace-nowrap"
-              title="Descarga un Excel con resumen, tipificaciones, AE diarias y el detalle gestión por gestión."
+              title={
+                mes === 'all'
+                  ? 'Descarga un Excel con todos los meses (resumen, tipificaciones, AE diarias y detalle gestión por gestión).'
+                  : `Descarga un Excel solo de ${MES_LABEL[mes as MesKey]}: comisión del mes, tipificaciones, solicitudes con IDs, y detalle gestión por gestión.`
+              }
             >
-              ↓ Descargar Excel
+              ↓ Descargar Excel{mes !== 'all' ? ` · ${MES_LABEL_CORTO[mes as MesKey]}` : ''}
             </a>
           )}
           <ChipGroup options={chipOptions} value={mes} onChange={setMes} />

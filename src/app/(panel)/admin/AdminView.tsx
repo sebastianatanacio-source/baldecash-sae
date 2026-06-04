@@ -82,6 +82,8 @@ function UploadCard({ meta }: { meta: SnapshotMeta | null }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  // Mes del Excel a descargar: 'all' (todos) o un mes concreto del snapshot.
+  const [exportMes, setExportMes] = useState<string>('all');
 
   async function submit() {
     if (!csv || !xlsx) return;
@@ -238,14 +240,31 @@ function UploadCard({ meta }: { meta: SnapshotMeta | null }) {
       )}
 
       <div className="mt-5 flex flex-wrap justify-between items-center gap-3">
-        <a
-          href="/api/export"
-          download
-          className="text-[13px] font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-4 decoration-blue-300 hover:decoration-blue-700"
-          title="Descarga un Excel con resumen, tipificaciones, AE diarias y detalle gestión por gestión de los últimos archivos cargados."
-        >
-          ↓ Descargar Excel (resumen + detalle)
-        </a>
+        <div className="flex items-center gap-2">
+          <select
+            value={exportMes}
+            onChange={e => setExportMes(e.target.value)}
+            className="input-field text-[12.5px] py-1.5 max-w-[160px]"
+            title="Mes a exportar"
+          >
+            <option value="all">Todos los meses</option>
+            {meta?.meses.map(m => (
+              <option key={m} value={m}>{m.toUpperCase()}</option>
+            ))}
+          </select>
+          <a
+            href={exportMes === 'all' ? '/api/export' : `/api/export?mes=${exportMes}`}
+            download
+            className="text-[13px] font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-4 decoration-blue-300 hover:decoration-blue-700"
+            title={
+              exportMes === 'all'
+                ? 'Descarga un Excel con todos los meses (resumen, tipificaciones, AE diarias y detalle gestión por gestión).'
+                : `Descarga un Excel solo de ${exportMes.toUpperCase()}: comisión del mes, tipificaciones, solicitudes con IDs y detalle gestión por gestión.`
+            }
+          >
+            ↓ Descargar Excel
+          </a>
+        </div>
         <button
           type="button"
           disabled={!csv || !xlsx || loading}
