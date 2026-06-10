@@ -204,7 +204,8 @@ export const DEFAULT_CONFIG: ComisionConfig = {
     { min: 9,  mul: 1.0,  label: '9% – 10.9%' },
     { min: 11, mul: 1.25, label: '11% – 12.9%' },
     { min: 13, mul: 1.5,  label: '13% – 14.9%' },
-    { min: 15, mul: 2.0,  label: '15% o más' },
+    { min: 15, mul: 2.0,  label: '15% – 19.9%' },
+    { min: 20, mul: 2.5,  label: '20% o más' },
   ],
   // Pilar 2: sin cambios (bono fijo por AE del mes).
   pilar2: [

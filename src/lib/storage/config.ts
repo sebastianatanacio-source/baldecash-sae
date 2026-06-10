@@ -35,7 +35,14 @@ function migrarSiNecesario(cfg: ComisionConfig): ComisionConfig {
     !Array.isArray(cfg.pilar1) || !cfg.pilar1.some(t => t && t.mul === 0);
   const tieneTramoMin5 =
     Array.isArray(cfg.pilar1) && cfg.pilar1.some(t => t && t.min === 5);
-  if (noTieneMulCero || tieneTramoMin5) {
+  // "Junio v1" tenía 6 tramos terminando en 15%/2.0×. Desde "junio v2"
+  // agregamos 20%/2.5×. Si vemos el tope 15%/2.0× sin un tramo superior,
+  // migramos al esquema extendido.
+  const esJunioV1 =
+    Array.isArray(cfg.pilar1) &&
+    cfg.pilar1.some(t => t && t.min === 15 && t.mul === 2.0) &&
+    !cfg.pilar1.some(t => t && t.min === 20);
+  if (noTieneMulCero || tieneTramoMin5 || esJunioV1) {
     out = { ...out, pilar1: DEFAULT_CONFIG.pilar1, pilar2: DEFAULT_CONFIG.pilar2 };
   }
 

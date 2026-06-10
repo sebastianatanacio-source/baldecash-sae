@@ -11,7 +11,10 @@ import { buildSnapshot } from '@/lib/parser';
 import { normalizar } from '@/lib/parser/blip';
 import { AGENTES } from '@/lib/domain/agentes';
 import { upload } from '@vercel/blob/client';
-import type { ComisionConfig, DataSnapshot, SnapshotMeta } from '@/lib/domain/types';
+import { ESQUEMAS_HISTORICOS } from '@/lib/domain/esquemas-historicos';
+import { MES_LABEL, ordenarMeses } from '@/lib/domain/meses';
+import { formatSol } from '@/lib/domain/comisiones';
+import type { ComisionConfig, DataSnapshot, MesKey, SnapshotMeta, TramoP1, TramoP2 } from '@/lib/domain/types';
 
 interface UserPub { username: 'admin' | 'jefa' | 'fernanda' | 'stefania' | 'julio' | 'luz'; rol: string; display: string }
 
@@ -66,8 +69,18 @@ export default function AdminView({
       </header>
 
       {vista === 'carga'         && <UploadCard meta={snapshotMeta} />}
-      {vista === 'comisiones'    && <ConfigCard config={config} />}
-      {vista === 'comisiones-luz'&& <ConfigLuzCard config={config} />}
+      {vista === 'comisiones'    && (
+        <div className="space-y-7">
+          <ConfigCard config={config} />
+          <EsquemasHistoricosCard kind="ventas" />
+        </div>
+      )}
+      {vista === 'comisiones-luz'&& (
+        <div className="space-y-7">
+          <ConfigLuzCard config={config} />
+          <EsquemasHistoricosCard kind="luz" />
+        </div>
+      )}
       {vista === 'sae-tags'      && <SaeTagsCard config={config} snapshot={snapshot} />}
       {vista === 'usuarios'      && <UsersCard usuarios={users} />}
     </div>
@@ -1015,5 +1028,179 @@ function UsersCard({ usuarios }: { usuarios: UserPub[] }) {
         </div>
       )}
     </Card>
+  );
+}
+
+// ============================================================ ESQUEMAS HISTÓRICOS
+function EsquemasHistoricosCard({ kind }: { kind: 'ventas' | 'luz' }) {
+  const [abierto, setAbierto] = useState(false);
+
+  // Agrupamos meses contiguos que comparten exactamente el mismo snapshot
+  // (mismo objeto referencial). Así no repetimos la misma tabla 4 veces para
+  // feb/mar/abr/may si todos comparten ESQUEMA_MAY_2026.
+  const grupos = (() => {
+    const meses = ordenarMeses(Object.keys(ESQUEMAS_HISTORICOS) as MesKey[]);
+    const out: Array<{ meses: MesKey[]; snap: NonNullable<typeof ESQUEMAS_HISTORICOS[MesKey]> }> = [];
+    for (const m of meses) {
+      const s = ESQUEMAS_HISTORICOS[m];
+      if (!s) continue;
+      const ultimo = out[out.length - 1];
+      if (ultimo && ultimo.snap === s) ultimo.meses.push(m);
+      else out.push({ meses: [m], snap: s });
+    }
+    return out;
+  })();
+
+  if (grupos.length === 0) return null;
+
+  return (
+    <Card>
+      <button
+        type="button"
+        onClick={() => setAbierto(v => !v)}
+        className="w-full flex items-center justify-between text-left"
+      >
+        <div>
+          <p className="eyebrow mb-1">Histórico · solo lectura</p>
+          <h3 className="font-display text-[16px] font-semibold text-ink">
+            Esquemas usados en meses anteriores
+          </h3>
+          <p className="text-[12px] text-muted mt-1">
+            Las cifras de meses cerrados siempre se calculan con el esquema que estuvo vigente en ese momento, no con el actual.
+          </p>
+        </div>
+        <span
+          className="text-[18px] text-muted2 ml-3 select-none transition-transform"
+          style={{ transform: abierto ? 'rotate(180deg)' : 'rotate(0deg)' }}
+          aria-hidden
+        >
+          ⌄
+        </span>
+      </button>
+
+      {abierto && (
+        <div className="mt-5 space-y-5">
+          {grupos.map((g, i) => {
+            const periodo = g.meses.length === 1
+              ? `${MES_LABEL[g.meses[0]]} 2026`
+              : `${MES_LABEL[g.meses[0]]} – ${MES_LABEL[g.meses[g.meses.length - 1]]} 2026`;
+            return (
+              <div key={i} className="border border-line rounded-xl p-5 bg-bg/40">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                  <p className="font-display text-[14px] font-semibold text-ink">{periodo}</p>
+                  <Pill tone="blue">Base {formatSol(g.snap.baseSol)}</Pill>
+                </div>
+                {kind === 'ventas' ? (
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <EsquemaHistTablaP1 tramos={g.snap.pilar1} base={g.snap.baseSol} />
+                    <EsquemaHistTablaP2 tramos={g.snap.pilar2} />
+                  </div>
+                ) : (
+                  <EsquemaHistLuz luzEsquema={g.snap.luzEsquema} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function EsquemaHistTablaP1({ tramos, base }: { tramos: TramoP1[]; base: number }) {
+  return (
+    <div>
+      <p className="eyebrow mb-2">Pilar 1 · % Sol/Cerradas → multiplicador</p>
+      <table className="w-full text-[12.5px] tabular">
+        <thead>
+          <tr className="text-left text-muted text-[10.5px] uppercase tracking-wider border-b border-line">
+            <th className="py-2">Tramo</th>
+            <th className="py-2 text-right">Mul</th>
+            <th className="py-2 text-right">Aplica</th>
+            <th className="py-2 text-right">Piso aten</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tramos.map((t, i) => (
+            <tr key={i} className="border-b border-line/50">
+              <td className="py-2">{t.label}</td>
+              <td className="py-2 text-right">{t.mul}×</td>
+              <td className="py-2 text-right">{formatSol(Math.round(base * t.mul))}</td>
+              <td className="py-2 text-right text-muted2">
+                {t.pisoAten ? t.pisoAten.toLocaleString('es-PE') : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function EsquemaHistTablaP2({ tramos }: { tramos: TramoP2[] }) {
+  return (
+    <div>
+      <p className="eyebrow mb-2">Pilar 2 · AE del mes → bono fijo</p>
+      <table className="w-full text-[12.5px] tabular">
+        <thead>
+          <tr className="text-left text-muted text-[10.5px] uppercase tracking-wider border-b border-line">
+            <th className="py-2">Tramo</th>
+            <th className="py-2 text-right">Bono</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tramos.map((t, i) => (
+            <tr key={i} className="border-b border-line/50">
+              <td className="py-2">{t.label}</td>
+              <td className="py-2 text-right">{t.bono === 0 ? '—' : `+${formatSol(t.bono)}`}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function EsquemaHistLuz({ luzEsquema }: { luzEsquema: ComisionConfig['luzEsquema'] }) {
+  if (!luzEsquema) return <p className="text-[12px] text-muted">Sin datos.</p>;
+  // Soporta tanto el shape escalonado (tramos) como el legacy single threshold
+  if (luzEsquema.tramos && luzEsquema.tramos.length > 0) {
+    const ord = [...luzEsquema.tramos].sort((a, b) => a.min - b.min);
+    return (
+      <div>
+        <p className="eyebrow mb-2">Comisión Luz · escalonado</p>
+        <table className="w-full text-[12.5px] tabular max-w-sm">
+          <thead>
+            <tr className="text-left text-muted text-[10.5px] uppercase tracking-wider border-b border-line">
+              <th className="py-2">Umbral mínimo</th>
+              <th className="py-2 text-right">Bono</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b border-line/50">
+              <td className="py-2">{`< ${ord[0].min}%`}</td>
+              <td className="py-2 text-right text-muted2">—</td>
+            </tr>
+            {ord.map((t, i) => (
+              <tr key={i} className="border-b border-line/50">
+                <td className="py-2">{`≥ ${t.min}%`}</td>
+                <td className="py-2 text-right">{formatSol(t.bono)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+  // Legacy todo-o-nada
+  const u = luzEsquema.umbralPct ?? 60;
+  const b = luzEsquema.bono ?? 300;
+  return (
+    <div>
+      <p className="eyebrow mb-2">Comisión Luz · todo o nada</p>
+      <p className="text-[13px] text-ink2">
+        Si la tasa de resolución llega al <strong>{u}%</strong>, Luz cobra {formatSol(b)}. Si no, S/0.
+      </p>
+    </div>
   );
 }
