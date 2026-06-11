@@ -121,6 +121,8 @@ export function calcularComision(
 export interface CalculoLuz {
   /** Umbral mínimo para que Luz cobre algo (el `min` del primer tramo) */
   umbralPct: number;
+  /** Umbral del tramo efectivamente alcanzado (0 si no califica) */
+  umbralAlcanzado: number;
   /** Bono que efectivamente cobra Luz dado su pctResolucion */
   bono: number;
   /** % de resolución observado en el mes */
@@ -131,6 +133,10 @@ export interface CalculoLuz {
   total: number;
   /** Etiqueta del tramo alcanzado, útil para mostrar en UI */
   tramoLabel?: string;
+  /** Próximo tramo no alcanzado (para hint "te falta X% para subir") */
+  proximoUmbral?: number;
+  /** Bono del próximo tramo, si hay uno mayor */
+  proximoBono?: number;
 }
 
 export function calcularComisionLuz(pctResolucion: number, cfg: ComisionConfig): CalculoLuz {
@@ -139,22 +145,37 @@ export function calcularComisionLuz(pctResolucion: number, cfg: ComisionConfig):
     const tramos = [...cfg.luzEsquema.tramos].sort((a, b) => a.min - b.min);
     const umbralPct = tramos[0].min;
     let bono = 0;
+    let umbralAlcanzado = 0;
     let tramoLabel: string | undefined;
     for (const t of tramos) {
       if (pctResolucion >= t.min) {
         bono = t.bono;
+        umbralAlcanzado = t.min;
         tramoLabel = t.label;
       }
     }
+    const proximo = tramos.find(t => t.min > pctResolucion);
     const cumple = bono > 0;
-    return { umbralPct, bono, pctResolucion, cumple, total: bono, tramoLabel };
+    return {
+      umbralPct,
+      umbralAlcanzado,
+      bono,
+      pctResolucion,
+      cumple,
+      total: bono,
+      tramoLabel,
+      proximoUmbral: proximo?.min,
+      proximoBono: proximo?.bono,
+    };
   }
   // Legacy todo-o-nada (esquema feb–may 2026)
   const umbralPct = cfg.luzEsquema?.umbralPct ?? 60;
   const bono = cfg.luzEsquema?.bono ?? 300;
   const cumple = pctResolucion >= umbralPct;
   return {
-    umbralPct, bono, pctResolucion, cumple,
+    umbralPct,
+    umbralAlcanzado: cumple ? umbralPct : 0,
+    bono, pctResolucion, cumple,
     total: cumple ? bono : 0,
     tramoLabel: cumple ? `≥ ${umbralPct}% · S/${bono}` : undefined,
   };

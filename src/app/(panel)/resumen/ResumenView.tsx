@@ -384,10 +384,17 @@ function UniversoSAE({
       <CardHeader
         eyebrow="Universo SAE · Luz"
         title="Atención SAE y tasa de resolución"
-        subtitle="Tipificaciones que cuentan como solucionada sobre las contestadas (esquema todo-o-nada)"
+        subtitle={
+          (cfgMes.luzEsquema?.tramos && cfgMes.luzEsquema.tramos.length > 1)
+            ? 'Tipificaciones que cuentan como solucionada sobre las contestadas (esquema escalonado)'
+            : 'Tipificaciones que cuentan como solucionada sobre las contestadas (esquema todo-o-nada)'
+        }
         right={
           <Pill tone={luzCom.cumple ? 'aqua' : 'gold'}>
-            {ef.pctResolucion.toFixed(1)}% / {luzCom.umbralPct}%
+            {ef.pctResolucion.toFixed(1)}%
+            {luzCom.cumple
+              ? ` · ≥ ${luzCom.umbralAlcanzado}%`
+              : ` / ${luzCom.umbralPct}%`}
           </Pill>
         }
       />
@@ -675,9 +682,19 @@ function TarjetaLuz({
   const soluProy = dias > 0 ? proyectarFinDeMes(ef.solucionadas, dias, total) : ef.solucionadas;
   const pctProy = conProy > 0 ? +(soluProy / conProy * 100).toFixed(1) : 0;
   const luzProy = calcularComisionLuz(pctProy, cfgMes);
-  const ppFaltantes = +(luz.umbralPct - ef.pctResolucion).toFixed(1);
+  // Próximo escalón: el siguiente que aún no alcanzó (o el primer umbral si no cumple)
+  const proxUmbralLuz = luz.proximoUmbral ?? (luz.cumple ? null : luz.umbralPct);
+  const objetivoPct = proxUmbralLuz ?? luz.umbralAlcanzado;
+  const ppFaltantes = proxUmbralLuz != null ? +((proxUmbralLuz as number) - ef.pctResolucion).toFixed(1) : 0;
 
-  const progPct = Math.min(100, (ef.pctResolucion / luz.umbralPct) * 100);
+  // Progreso dentro del tramo actual (desde umbralAlcanzado hasta el próximo).
+  // Si está en el tope (no hay próximo), se muestra 100%.
+  const progPct = proxUmbralLuz != null
+    ? Math.min(100, ((ef.pctResolucion - luz.umbralAlcanzado) / ((proxUmbralLuz as number) - luz.umbralAlcanzado)) * 100)
+    : 100;
+  const esquemaLuzLabel = (cfgMes.luzEsquema?.tramos && cfgMes.luzEsquema.tramos.length > 1)
+    ? 'Esquema SAE · escalonado'
+    : 'Esquema SAE · todo o nada';
 
   return (
     <div className="card-surface p-6">
@@ -691,7 +708,7 @@ function TarjetaLuz({
           </div>
           <div>
             <div className="font-display text-[18px] font-semibold text-ink leading-tight">{spec.nombre}</div>
-            <div className="text-[11px] text-muted2 mt-0.5">Esquema SAE · todo o nada</div>
+            <div className="text-[11px] text-muted2 mt-0.5">{esquemaLuzLabel}</div>
           </div>
         </div>
         <div className="text-right">
@@ -712,7 +729,7 @@ function TarjetaLuz({
           </div>
           <div className="flex items-center gap-2 text-[12px]">
             <span className="font-display font-semibold tabular text-ink">{ef.pctResolucion.toFixed(1)}%</span>
-            <span className="text-muted2 tabular">/ {luz.umbralPct}%</span>
+            <span className="text-muted2 tabular">{proxUmbralLuz != null ? `/ ${proxUmbralLuz}%` : '· tope'}</span>
             <span
               className="px-2 py-0.5 rounded-md text-[10px] font-bold"
               style={{
@@ -720,7 +737,9 @@ function TarjetaLuz({
                 color: luz.cumple ? spec.color : '#987933',
               }}
             >
-              {luz.cumple ? `cobra ${formatSol(luz.bono)}` : 'sin comisión'}
+              {luz.cumple
+                ? `≥ ${luz.umbralAlcanzado}% · cobra ${formatSol(luz.bono)}`
+                : 'sin comisión'}
             </span>
           </div>
         </div>
@@ -732,8 +751,10 @@ function TarjetaLuz({
         </div>
         <div className="flex items-center justify-between mt-1.5 text-[10.5px]">
           <span className="text-muted2">Cierre proyectado: <strong className="text-ink2 tabular">{pctProy.toFixed(1)}%</strong></span>
-          {luz.cumple ? (
-            <span className="font-semibold" style={{ color: spec.color }}>Pasa el umbral</span>
+          {proxUmbralLuz == null ? (
+            <span className="font-semibold" style={{ color: spec.color }}>Tramo máximo</span>
+          ) : luz.cumple ? (
+            <span className="font-semibold" style={{ color: spec.color }}>Faltan {ppFaltantes} pp para subir a {proxUmbralLuz}%</span>
           ) : (
             <span className="font-semibold text-gold-700">Faltan {ppFaltantes} pp</span>
           )}

@@ -427,10 +427,20 @@ function SeccionMetaLuz({
   const ef = metricasLuzEfectivas(m, config);
   const luz = calcularComisionLuz(ef.pctResolucion, cfgMes);
 
-  // Solucionadas adicionales necesarias para subir al umbral
-  const necesariasParaUmbral = Math.ceil(ef.contestadas * (luz.umbralPct / 100));
-  const faltanSolu = Math.max(0, necesariasParaUmbral - ef.solucionadas);
-  const ppFaltantes = +(luz.umbralPct - ef.pctResolucion).toFixed(1);
+  // Próximo escalón a alcanzar: el primer tramo que aún no llegó.
+  // Si no califica todavía, es el umbral mínimo (primer tramo del esquema).
+  // Si ya está en el tope, no hay próximo.
+  const proxUmbral = luz.proximoUmbral ?? (luz.cumple ? null : luz.umbralPct);
+  const proxBono = luz.proximoBono ?? (luz.cumple ? null : luz.bono);
+  const hayEscalonSiguiente = proxUmbral != null;
+
+  // Solucionadas adicionales necesarias para subir al siguiente escalón
+  const objetivoPct = proxUmbral ?? luz.umbralAlcanzado;
+  const necesariasParaSubir = Math.ceil(ef.contestadas * (objetivoPct / 100));
+  const faltanSolu = Math.max(0, necesariasParaSubir - ef.solucionadas);
+  const ppFaltantes = hayEscalonSiguiente
+    ? +((proxUmbral as number) - ef.pctResolucion).toFixed(1)
+    : 0;
 
   // Proyección a fin de mes (usa razón actual)
   const proyec = useMemo(() => {
@@ -478,43 +488,64 @@ function SeccionMetaLuz({
           <div className="rounded-lg border border-blue-300/20 bg-white/5 px-4 py-3">
             <div className="text-[10px] uppercase tracking-wider text-blue-200/80 mb-1">Regla</div>
             <div className="text-[12px] leading-relaxed">
-              Si tu tasa de resolución llega al{' '}
-              <strong className="text-white">{luz.umbralPct}%</strong>, comisionas{' '}
-              <strong className="text-white">{formatSol(luz.bono)}</strong>.
+              {luz.cumple ? (
+                <>
+                  Estás en el tramo{' '}
+                  <strong className="text-white">≥ {luz.umbralAlcanzado}%</strong>: comisionas{' '}
+                  <strong className="text-white">{formatSol(luz.bono)}</strong>
+                  {hayEscalonSiguiente && (
+                    <>
+                      . Si llegas al{' '}
+                      <strong className="text-white">{proxUmbral}%</strong>, subes a{' '}
+                      <strong className="text-white">{formatSol(proxBono as number)}</strong>.
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  Si tu tasa de resolución llega al{' '}
+                  <strong className="text-white">{luz.umbralPct}%</strong>, comisionas{' '}
+                  <strong className="text-white">{formatSol(luz.bono || (proxBono ?? 0))}</strong>.
+                </>
+              )}
             </div>
           </div>
         </div>
 
-        {/* CARD 2: TASA DE RESOLUCIÓN — PROGRESO AL UMBRAL */}
+        {/* CARD 2: TASA DE RESOLUCIÓN — PROGRESO AL SIGUIENTE ESCALÓN */}
         <MetaProgress
           eyebrow="Tasa de resolución · Tu única meta"
           valorActual={ef.pctResolucion}
           decimales={1}
-          valorObjetivo={luz.cumple ? undefined : luz.umbralPct}
+          valorObjetivo={hayEscalonSiguiente ? (proxUmbral as number) : undefined}
           unidad="% sobre contestadas"
           tramoActual={
             luz.cumple
-              ? { label: `≥ ${luz.umbralPct}%`, recompensa: `Cobras ${formatSol(luz.bono)} este mes` }
+              ? { label: `≥ ${luz.umbralAlcanzado}%`, recompensa: `Cobras ${formatSol(luz.bono)} este mes` }
               : { label: `< ${luz.umbralPct}%`, recompensa: 'Aún no comisiona' }
           }
           tramoSiguiente={
-            luz.cumple
-              ? null
-              : { label: `${luz.umbralPct}%`, recompensa: `Comisionas ${formatSol(luz.bono)}` }
+            hayEscalonSiguiente
+              ? { label: `${proxUmbral}%`, recompensa: `Subes a ${formatSol(proxBono as number)}` }
+              : null
           }
           desafio={
-            !luz.cumple
+            hayEscalonSiguiente
               ? {
                   titulo: faltanSolu > 0
                     ? `Necesitas ${faltanSolu} consultas solucionadas más`
-                    : `Te faltan ${ppFaltantes} pp para llegar al ${luz.umbralPct}%`,
+                    : `Te faltan ${ppFaltantes} pp para llegar al ${proxUmbral}%`,
                   detalle: faltanSolu > 0
-                    ? `con tus ${nf(ef.contestadas)} conversaciones contestadas actuales, para subir al ${luz.umbralPct}% y desbloquear los ${formatSol(luz.bono)} de comisión.`
+                    ? `con tus ${nf(ef.contestadas)} conversaciones contestadas actuales, para subir al ${proxUmbral}% y cobrar ${formatSol(proxBono as number)}.`
                     : `Sigue tipificando como solucionadas las consultas que resuelvas.`,
                 }
               : null
           }
-          progresoPct={Math.min(100, (ef.pctResolucion / luz.umbralPct) * 100)}
+          progresoPct={
+            hayEscalonSiguiente
+              ? Math.min(100, ((ef.pctResolucion - luz.umbralAlcanzado) / ((proxUmbral as number) - luz.umbralAlcanzado)) * 100)
+              : 100
+          }
           color={spec.color}
           colorSoft={spec.colorSoft}
           tono="aqua"
@@ -536,26 +567,50 @@ function SeccionMetaLuz({
         <div className="card-surface p-6 lg:col-span-1">
           <p className="eyebrow mb-3">Cómo funciona</p>
           <h3 className="font-display text-[18px] font-semibold text-ink mb-3 leading-tight">
-            Esquema todo o nada
+            {cfgMes.luzEsquema?.tramos && cfgMes.luzEsquema.tramos.length > 1
+              ? 'Esquema escalonado'
+              : 'Esquema todo o nada'}
           </h3>
-          <ul className="space-y-3 text-[12.5px] text-ink2 leading-relaxed">
-            <li className="flex gap-2">
-              <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
-              <span>Tu único indicador es la <strong>tasa de resolución</strong>: consultas solucionadas dividido entre conversaciones contestadas.</span>
-            </li>
-            <li className="flex gap-2">
-              <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
-              <span>Si llegas al <strong>{luz.umbralPct}%</strong> al cierre del mes, comisionas <strong>{formatSol(luz.bono)}</strong> fijos.</span>
-            </li>
-            <li className="flex gap-2">
-              <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
-              <span>No hay escalones intermedios: por debajo del {luz.umbralPct}%, la comisión es <strong>{formatSol(0)}</strong>.</span>
-            </li>
-            <li className="flex gap-2">
-              <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
-              <span>Las atenciones, transferidas y consultas solucionadas son tu información operativa, no afectan la comisión directamente.</span>
-            </li>
-          </ul>
+          {cfgMes.luzEsquema?.tramos && cfgMes.luzEsquema.tramos.length > 0 ? (
+            <ul className="space-y-3 text-[12.5px] text-ink2 leading-relaxed">
+              <li className="flex gap-2">
+                <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
+                <span>Tu único indicador es la <strong>tasa de resolución</strong>: consultas solucionadas ÷ conversaciones contestadas.</span>
+              </li>
+              {[...cfgMes.luzEsquema.tramos].sort((a, b) => a.min - b.min).map((t, i) => (
+                <li key={i} className="flex gap-2">
+                  <span
+                    className="w-1 h-1 rounded-full mt-2 shrink-0"
+                    style={{ background: spec.color, opacity: 0.4 + (i / cfgMes.luzEsquema!.tramos!.length) * 0.6 }}
+                  />
+                  <span>Si llegas al <strong>{t.min}%</strong>, comisionas <strong>{formatSol(t.bono)}</strong>.</span>
+                </li>
+              ))}
+              <li className="flex gap-2">
+                <span className="w-1 h-1 rounded-full mt-2 shrink-0 bg-gold-400" />
+                <span>Por debajo del {cfgMes.luzEsquema.tramos[0].min}%, la comisión es <strong>{formatSol(0)}</strong>.</span>
+              </li>
+            </ul>
+          ) : (
+            <ul className="space-y-3 text-[12.5px] text-ink2 leading-relaxed">
+              <li className="flex gap-2">
+                <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
+                <span>Tu único indicador es la <strong>tasa de resolución</strong>: consultas solucionadas dividido entre conversaciones contestadas.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
+                <span>Si llegas al <strong>{luz.umbralPct}%</strong> al cierre del mes, comisionas <strong>{formatSol(luz.bono)}</strong> fijos.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
+                <span>No hay escalones intermedios: por debajo del {luz.umbralPct}%, la comisión es <strong>{formatSol(0)}</strong>.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="w-1 h-1 rounded-full mt-2 shrink-0" style={{ background: spec.color }} />
+                <span>Las atenciones, transferidas y consultas solucionadas son tu información operativa, no afectan la comisión directamente.</span>
+              </li>
+            </ul>
+          )}
         </div>
       </div>
     </section>
