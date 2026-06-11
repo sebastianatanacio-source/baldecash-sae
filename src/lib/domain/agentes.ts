@@ -46,10 +46,10 @@ export const AGENTES: Record<AgenteSlug, AgenteSpec> = {
   },
   julio: {
     slug: 'julio',
-    nombre: 'Julio Vargas',
-    initials: 'JV',
+    nombre: 'Julio Ávila',
+    initials: 'JA',
     cupon: 'CC2026',
-    preowner: 'Julio Vargas',
+    preowner: 'Julio Avila',
     matchBlip: [/julio/i],
     color: '#4453A0',     // Blue 400
     colorSoft: '#D6DCED', // Blue 100

@@ -30,7 +30,7 @@ const DEFAULT_DISPLAY: Record<Rol, string> = {
   jefa: 'Jefa SAE',
   fernanda: 'Fernanda Ferrer',
   stefania: 'Stefania Mc Gregor',
-  julio: 'Julio Vargas',
+  julio: 'Julio Ávila',
   luz: 'Luz Rojas',
 };
 

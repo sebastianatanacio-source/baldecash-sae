@@ -72,13 +72,13 @@ export default function AdminView({
       {vista === 'comisiones'    && (
         <div className="space-y-7">
           <ConfigCard config={config} />
-          <EsquemasHistoricosCard kind="ventas" />
+          <EsquemasHistoricosCard kind="ventas" vigente={config} />
         </div>
       )}
       {vista === 'comisiones-luz'&& (
         <div className="space-y-7">
           <ConfigLuzCard config={config} />
-          <EsquemasHistoricosCard kind="luz" />
+          <EsquemasHistoricosCard kind="luz" vigente={config} />
         </div>
       )}
       {vista === 'sae-tags'      && <SaeTagsCard config={config} snapshot={snapshot} />}
@@ -1032,21 +1032,45 @@ function UsersCard({ usuarios }: { usuarios: UserPub[] }) {
 }
 
 // ============================================================ ESQUEMAS HISTÓRICOS
-function EsquemasHistoricosCard({ kind }: { kind: 'ventas' | 'luz' }) {
+function EsquemasHistoricosCard({
+  kind, vigente,
+}: { kind: 'ventas' | 'luz'; vigente?: ComisionConfig }) {
   const [abierto, setAbierto] = useState(false);
 
   // Agrupamos meses contiguos que comparten exactamente el mismo snapshot
   // (mismo objeto referencial). Así no repetimos la misma tabla 4 veces para
   // feb/mar/abr/may si todos comparten ESQUEMA_MAY_2026.
-  const grupos = (() => {
+  type Snap = { baseSol: number; pilar1: TramoP1[]; pilar2: TramoP2[]; luzEsquema?: ComisionConfig['luzEsquema'] };
+  type Grupo = { etiqueta: string; vigente: boolean; snap: Snap };
+
+  const grupos: Grupo[] = (() => {
     const meses = ordenarMeses(Object.keys(ESQUEMAS_HISTORICOS) as MesKey[]);
-    const out: Array<{ meses: MesKey[]; snap: NonNullable<typeof ESQUEMAS_HISTORICOS[MesKey]> }> = [];
+    const acc: Array<{ meses: MesKey[]; snap: NonNullable<typeof ESQUEMAS_HISTORICOS[MesKey]> }> = [];
     for (const m of meses) {
       const s = ESQUEMAS_HISTORICOS[m];
       if (!s) continue;
-      const ultimo = out[out.length - 1];
+      const ultimo = acc[acc.length - 1];
       if (ultimo && ultimo.snap === s) ultimo.meses.push(m);
-      else out.push({ meses: [m], snap: s });
+      else acc.push({ meses: [m], snap: s });
+    }
+    const out: Grupo[] = acc.map(g => ({
+      etiqueta: g.meses.length === 1
+        ? `${MES_LABEL[g.meses[0]]} 2026`
+        : `${MES_LABEL[g.meses[0]]} – ${MES_LABEL[g.meses[g.meses.length - 1]]} 2026`,
+      vigente: false,
+      snap: g.snap,
+    }));
+    if (vigente) {
+      out.push({
+        etiqueta: 'Junio 2026 en adelante',
+        vigente: true,
+        snap: {
+          baseSol: vigente.baseSol,
+          pilar1: vigente.pilar1,
+          pilar2: vigente.pilar2,
+          luzEsquema: vigente.luzEsquema,
+        },
+      });
     }
     return out;
   })();
@@ -1080,27 +1104,34 @@ function EsquemasHistoricosCard({ kind }: { kind: 'ventas' | 'luz' }) {
 
       {abierto && (
         <div className="mt-5 space-y-5">
-          {grupos.map((g, i) => {
-            const periodo = g.meses.length === 1
-              ? `${MES_LABEL[g.meses[0]]} 2026`
-              : `${MES_LABEL[g.meses[0]]} – ${MES_LABEL[g.meses[g.meses.length - 1]]} 2026`;
-            return (
-              <div key={i} className="border border-line rounded-xl p-5 bg-bg/40">
-                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                  <p className="font-display text-[14px] font-semibold text-ink">{periodo}</p>
+          {grupos.map((g, i) => (
+            <div
+              key={i}
+              className="border rounded-xl p-5"
+              style={{
+                background: g.vigente ? '#E0F1F3' + '40' : '#FAFBFE',
+                borderColor: g.vigente ? '#00A29B' : '#E4E7F2',
+              }}
+            >
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <p className="font-display text-[14px] font-semibold text-ink">
+                  {g.etiqueta}
+                </p>
+                <div className="flex items-center gap-2">
+                  {g.vigente && <Pill tone="aqua">Vigente</Pill>}
                   <Pill tone="blue">Base {formatSol(g.snap.baseSol)}</Pill>
                 </div>
-                {kind === 'ventas' ? (
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <EsquemaHistTablaP1 tramos={g.snap.pilar1} base={g.snap.baseSol} />
-                    <EsquemaHistTablaP2 tramos={g.snap.pilar2} />
-                  </div>
-                ) : (
-                  <EsquemaHistLuz luzEsquema={g.snap.luzEsquema} />
-                )}
               </div>
-            );
-          })}
+              {kind === 'ventas' ? (
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <EsquemaHistTablaP1 tramos={g.snap.pilar1} base={g.snap.baseSol} />
+                  <EsquemaHistTablaP2 tramos={g.snap.pilar2} />
+                </div>
+              ) : (
+                <EsquemaHistLuz luzEsquema={g.snap.luzEsquema} />
+              )}
+            </div>
+          ))}
         </div>
       )}
     </Card>
